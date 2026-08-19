@@ -52,7 +52,7 @@ public class ApiErrorHandler {
         return pd;
     }
 
-    @ExceptionHandler({ForbiddenException.class, AccessDeniedException.class})
+    @ExceptionHandler({ ForbiddenException.class, AccessDeniedException.class })
     ProblemDetail forbidden(RuntimeException ex, HttpServletRequest req) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
         pd.setTitle("Forbidden");

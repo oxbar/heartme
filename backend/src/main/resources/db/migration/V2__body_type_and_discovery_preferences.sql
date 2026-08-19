@@ -1,0 +1,11 @@
+ALTER TABLE profiles ADD COLUMN body_type VARCHAR(40) NULL;
+ALTER TABLE profiles ADD COLUMN strict_age BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE profiles ADD COLUMN strict_distance BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE profiles ADD COLUMN recently_active_first BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE profiles ADD COLUMN global_mode BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE profile_preferred_body_types (
+  user_id UUID NOT NULL REFERENCES profiles(user_id) ON DELETE CASCADE,
+  body_type VARCHAR(40) NOT NULL,
+  PRIMARY KEY(user_id, body_type)
+);

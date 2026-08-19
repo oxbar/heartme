@@ -1,4 +1,5 @@
 export type Gender = 'MAN' | 'WOMAN' | 'NON_BINARY' | 'OTHER';
+export type BodyType = 'SLIM' | 'ATHLETIC' | 'AVERAGE' | 'MUSCULAR' | 'CURVY' | 'PLUS_SIZE';
 export type InteractionType = 'LIKE' | 'PASS' | 'SUPER_LIKE';
 export type SubscriptionPlan = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
@@ -21,6 +22,7 @@ export interface ProfileView {
   bio: string | null;
   birthDate: string;
   gender: Gender;
+  bodyType: BodyType | null;
   city: string;
   state: string;
   country: string;
@@ -29,9 +31,14 @@ export interface ProfileView {
   minAge: number;
   maxAge: number;
   maxDistanceKm: number;
+  strictAge: boolean;
+  strictDistance: boolean;
   discoverable: boolean;
+  recentlyActiveFirst: boolean;
+  globalMode: boolean;
   interests: string[];
   lookingFor: Gender[];
+  preferredBodyTypes: BodyType[];
 }
 
 export type ProfileRequest = Omit<ProfileView, 'userId'>;
@@ -42,6 +49,7 @@ export interface PublicProfileView {
   bio: string | null;
   age: number;
   gender: Gender;
+  bodyType: BodyType | null;
   city: string;
   state: string;
   country: string;

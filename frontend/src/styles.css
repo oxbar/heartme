@@ -1108,13 +1108,32 @@
     background: hsl(var(--dating-canvas));
   }
 
+  .hm-profile-edit-shell::-webkit-scrollbar { width: 12px; }
+  .hm-profile-edit-shell::-webkit-scrollbar-track { background: transparent; }
+  .hm-profile-edit-shell::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 100% / 0.07);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .hm-profile-edit-shell::-webkit-scrollbar-thumb:hover {
+    background: hsl(0 0% 100% / 0.13);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
   .hm-profile-edit-grid {
     display: grid;
-    width: min(1040px, 100%);
+    width: min(1240px, 100%);
     margin: 0 auto;
-    grid-template-columns: minmax(0, 1fr) 420px;
+    grid-template-columns: minmax(0, 1fr) 460px;
     gap: 28px;
     align-items: start;
+  }
+
+  .hm-profile-edit-grid > :nth-child(2) {
+    position: sticky;
+    top: 24px;
   }
 
   .hm-dark-panel {
@@ -1141,6 +1160,58 @@
 
   .hm-dark-form {
     padding: 20px;
+    color: hsl(0 0% 100% / 0.85);
+  }
+
+  .hm-dark-form .hm-dark-field label {
+    color: hsl(0 0% 100% / 0.7);
+  }
+
+  .hm-dark-form .hm-dark-field input,
+  .hm-dark-form .hm-dark-field textarea,
+  .hm-dark-form .hm-dark-field select {
+    background: hsl(0 0% 0% / 0.35);
+    border-color: hsl(0 0% 100% / 0.1);
+    color: white;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .hm-dark-form .hm-dark-field input::placeholder,
+  .hm-dark-form .hm-dark-field textarea::placeholder {
+    color: hsl(0 0% 100% / 0.28);
+  }
+
+  .hm-dark-form .hm-dark-field input:focus,
+  .hm-dark-form .hm-dark-field textarea:focus,
+  .hm-dark-form .hm-dark-field select:focus {
+    border-color: hsl(var(--primary));
+    background: hsl(0 0% 0% / 0.5);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.22);
+  }
+
+  .hm-dark-form .hm-interest-input {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 12px;
+    padding: 12px 14px;
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    background: hsl(0 0% 0% / 0.35);
+    color: white;
+    outline: none;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .hm-dark-form .hm-interest-input::placeholder {
+    color: hsl(0 0% 100% / 0.3);
+  }
+
+  .hm-dark-form .hm-interest-input:focus {
+    border-color: hsl(var(--primary));
+    background: hsl(0 0% 0% / 0.5);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.22);
   }
 
   .hm-dark-field {
@@ -1150,7 +1221,7 @@
   .hm-dark-field label {
     display: block;
     margin-bottom: 7px;
-    color: hsl(var(--dating-muted));
+    color: hsl(0 0% 100% / 0.7);
     font-size: 12px;
     font-weight: 800;
   }
@@ -1160,10 +1231,10 @@
   .hm-dark-field select {
     width: 100%;
     min-height: 44px;
-    border: 1px solid hsl(var(--dating-border));
+    border: 1px solid hsl(0 0% 100% / 0.1);
     border-radius: 8px;
     padding: 10px 12px;
-    background: hsl(var(--dating-canvas));
+    background: hsl(0 0% 0% / 0.35);
     color: white;
     outline: none;
   }
@@ -1177,7 +1248,7 @@
   .hm-dark-field textarea:focus,
   .hm-dark-field select:focus {
     border-color: hsl(var(--primary));
-    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.16);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
   }
 
   .hm-dark-field-error {
@@ -1193,20 +1264,36 @@
   }
 
   .hm-choice-chip {
-    min-height: 36px;
-    border: 1px solid hsl(var(--dating-border));
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    border: 1px solid hsl(0 0% 100% / 0.11);
     border-radius: 999px;
-    padding: 0 13px;
-    background: hsl(var(--dating-canvas));
-    color: hsl(var(--dating-muted));
-    font-size: 12px;
+    padding: 0 16px;
+    background: hsl(0 0% 100% / 0.03);
+    color: hsl(0 0% 100% / 0.82);
+    font-size: 13px;
     font-weight: 800;
+    cursor: pointer;
+    transition: transform .12s ease, border-color .18s ease, background .18s ease, color .18s ease;
+  }
+
+  .hm-choice-chip:hover {
+    border-color: hsl(0 0% 100% / 0.22);
+    background: hsl(0 0% 100% / 0.06);
+    color: white;
+  }
+
+  .hm-choice-chip:active {
+    transform: scale(0.97);
   }
 
   .hm-choice-chip.is-selected {
     border-color: hsl(var(--primary));
-    background: hsl(var(--primary) / 0.18);
+    background: hsl(var(--primary) / 0.16);
     color: white;
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.28);
   }
 
   .hm-profile-edit-actions {
@@ -1242,7 +1329,7 @@
   }
 
   .hm-photo-editor {
-    padding: 16px;
+    padding: 20px;
   }
 
   .hm-photo-editor-tabs {
@@ -1269,46 +1356,88 @@
   .hm-photo-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding: 14px 0 4px;
+    gap: 10px;
+    padding: 16px 0 6px;
   }
 
   .hm-photo-cell {
     position: relative;
     aspect-ratio: 0.78;
+    min-height: 140px;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: 12px;
     background: hsl(var(--dating-panel-raised));
+    border: 1px solid hsl(0 0% 100% / 0.05);
+    transition: transform .12s ease, box-shadow .14s ease, border-color .14s ease;
+  }
+
+  .hm-photo-cell:hover {
+    border-color: hsl(0 0% 100% / 0.13);
   }
 
   .hm-photo-cell img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
+  }
+
+  .hm-photo-cell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, transparent 55%, hsl(0 0% 0% / 0.55) 100%);
+    pointer-events: none;
   }
 
   .hm-photo-remove {
     position: absolute;
-    right: 5px;
-    bottom: 5px;
+    right: 6px;
+    bottom: 6px;
     display: grid;
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     place-items: center;
     border-radius: 999px;
-    background: white;
+    background: hsl(0 0% 100% / 0.96);
     color: hsl(225 12% 8%);
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.5);
+    z-index: 2;
+    cursor: pointer;
+  }
+
+  .hm-photo-remove:hover {
+    background: white;
+    color: hsl(0 60% 55%);
   }
 
   .hm-photo-add {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     width: 100%;
     height: 100%;
-    place-items: center;
-    border: 1px dashed hsl(var(--dating-border));
-    border-radius: 8px;
+    border: 1.5px dashed hsl(var(--primary) / 0.45);
+    border-radius: 12px;
     color: hsl(var(--primary));
     cursor: pointer;
+    background: hsl(var(--primary) / 0.04);
+    font-weight: 800;
+    font-size: 11px;
+    text-align: center;
+    padding: 8px;
+  }
+
+  .hm-photo-add:hover {
+    background: hsl(var(--primary) / 0.08);
+    border-color: hsl(var(--primary) / 0.7);
+  }
+
+  .hm-photo-add::before {
+    content: "Adicionar foto";
   }
 
   .hm-profile-screen {
@@ -1501,6 +1630,353 @@
     right: 12px;
     left: 12px;
   }
+
+  .hm-settings-section-title {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(0 0% 100% / 0.48);
+    margin: 0 0 14px;
+    padding: 0 0 8px;
+    border-bottom: 1px solid hsl(0 0% 100% / 0.05);
+  }
+
+  .hm-settings-section-sub {
+    font-size: 12.5px;
+    color: hsl(0 0% 100% / 0.42);
+    line-height: 1.45;
+    margin: -4px 0 0;
+  }
+
+  .hm-location-card {
+    background: hsl(var(--dating-panel-raised));
+    border: 1px solid hsl(0 0% 100% / 0.05);
+    border-radius: 14px;
+    padding: 14px;
+    margin: 6px 0 18px;
+  }
+
+  .hm-location-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .hm-location-card-title {
+    font-weight: 800;
+    font-size: 14px;
+    color: hsl(0 0% 100% / 0.92);
+  }
+
+  .hm-location-card-sub {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: hsl(0 0% 100% / 0.42);
+  }
+
+  .hm-bodytype-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0 8px;
+  }
+
+  .hm-bodytype-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 13px;
+    background: hsl(var(--dating-panel-raised));
+    border: 1px solid hsl(0 0% 100% / 0.06);
+    border-radius: 14px;
+    cursor: pointer;
+    color: hsl(0 0% 100% / 0.78);
+    text-align: left;
+    position: relative;
+    transition: transform .14s ease, border-color .18s ease, background .18s ease;
+  }
+
+  .hm-bodytype-card:hover {
+    border-color: hsl(0 0% 100% / 0.12);
+  }
+
+  .hm-bodytype-card:active {
+    transform: scale(0.985);
+  }
+
+  .hm-bodytype-card.is-selected {
+    border-color: hsl(var(--primary) / 0.55);
+    background: hsl(var(--primary) / 0.07);
+    color: white;
+  }
+
+  .hm-bodytype-card-icon {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    background: hsl(0 0% 100% / 0.05);
+    color: hsl(var(--primary));
+  }
+
+  .hm-bodytype-card-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .hm-bodytype-card-label {
+    font-weight: 800;
+    font-size: 14px;
+  }
+
+  .hm-bodytype-card-hint {
+    font-size: 11.5px;
+    color: hsl(0 0% 100% / 0.42);
+  }
+
+  .hm-bodytype-card.is-selected .hm-bodytype-card-hint {
+    color: hsl(0 0% 100% / 0.68);
+  }
+
+  .hm-bodytype-card-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: hsl(var(--primary));
+    color: white;
+    font-weight: 900;
+  }
+
+  .hm-muted-link {
+    background: transparent;
+    border: 0;
+    padding: 4px 0;
+    color: hsl(0 0% 100% / 0.42);
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+  }
+  .hm-muted-link:hover { color: hsl(0 0% 100% / 0.7); }
+
+  .hm-interess-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 6px 12px;
+    border-radius: 999px;
+    background: hsl(var(--primary) / 0.11);
+    border: 1px solid hsl(var(--primary) / 0.22);
+    color: hsl(0 0% 100% / 0.88);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .hm-interess-chip button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: hsl(0 0% 100% / 0.1);
+    border: 0;
+    color: hsl(0 0% 100% / 0.8);
+    cursor: pointer;
+    padding: 0;
+  }
+  .hm-interess-chip button:hover { background: hsl(0 0% 100% / 0.22); }
+
+  .hm-slider-card {
+    background: hsl(var(--dating-panel-raised));
+    border: 1px solid hsl(0 0% 100% / 0.07);
+    border-radius: 16px;
+    padding: 18px 18px 16px;
+    margin: 6px 0 14px;
+  }
+
+  .hm-slider-strict-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed hsl(0 0% 100% / 0.07);
+  }
+
+  .hm-slider-strict-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .hm-slider-strict-label strong {
+    font-weight: 800;
+    font-size: 13px;
+    color: hsl(0 0% 100% / 0.88);
+  }
+  .hm-slider-strict-label .hm-muted {
+    font-size: 11.5px;
+    color: hsl(0 0% 100% / 0.4);
+  }
+
+  .hm-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid hsl(0 0% 100% / 0.05);
+  }
+  .hm-toggle-row:last-child { border-bottom: 0; }
+
+  .hm-toggle-row-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+  }
+  .hm-toggle-row-copy strong {
+    font-weight: 800;
+    font-size: 14px;
+    color: hsl(0 0% 100% / 0.9);
+  }
+  .hm-toggle-row-copy .hm-muted {
+    font-size: 12px;
+    color: hsl(0 0% 100% / 0.42);
+    line-height: 1.4;
+  }
+
+  .hm-chip-row.is-wrapping {
+    flex-wrap: wrap;
+    gap: 10px 8px;
+  }
+
+  .hm-choice-chip.is-soft {
+    background: hsl(var(--dating-panel-raised));
+    border-color: hsl(0 0% 100% / 0.11);
+    gap: 8px;
+    min-height: 40px;
+    color: hsl(0 0% 100% / 0.85);
+    font-weight: 800;
+  }
+  .hm-choice-chip.is-soft:hover {
+    border-color: hsl(0 0% 100% / 0.26);
+    background: hsl(0 0% 100% / 0.06);
+    color: white;
+  }
+  .hm-choice-chip.is-soft.is-selected {
+    background: hsl(var(--primary) / 0.14);
+    border-color: hsl(var(--primary) / 0.5);
+    color: white;
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.22) inset;
+  }
+}
+
+/* ========================================================
+   Slider component styles (dating dark theme)
+   ======================================================== */
+@layer components {
+  .hm-slider { display: block; width: 100%; }
+  .hm-slider-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .hm-slider-label {
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.01em;
+    color: hsl(0 0% 100% / 0.92);
+  }
+  .hm-slider-value {
+    font-size: 14px;
+    font-weight: 900;
+    color: hsl(var(--primary));
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.25);
+  }
+  .hm-slider-track-wrap {
+    position: relative;
+    height: 48px;
+    padding: 0 12px;
+    touch-action: none;
+    user-select: none;
+  }
+  .hm-slider-track {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 6px;
+    transform: translateY(-50%);
+    background: hsl(0 0% 100% / 0.14);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .hm-slider-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(calc(var(--primary) + 12) 90% 65%));
+    border-radius: 999px;
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.28) inset, 0 0 18px hsl(var(--primary) / 0.25);
+  }
+  .hm-slider-thumb {
+    position: absolute;
+    top: 50%;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: white;
+    transform: translate(-50%, -50%);
+    box-shadow:
+      0 1px 0 hsl(0 0% 0% / 0.3) inset,
+      0 1px 6px hsl(0 0% 0% / 0.65),
+      0 0 0 4px hsl(var(--primary) / 0.22);
+    cursor: grab;
+    transition: box-shadow .14s ease, transform .1s ease;
+  }
+  .hm-slider-thumb:hover {
+    box-shadow:
+      0 1px 0 hsl(0 0% 0% / 0.3) inset,
+      0 1px 8px hsl(0 0% 0% / 0.7),
+      0 0 0 6px hsl(var(--primary) / 0.3);
+  }
+  .hm-slider-thumb:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  .hm-slider-thumb:focus-visible {
+    outline: 0;
+    box-shadow:
+      0 1px 0 hsl(0 0% 0% / 0.3) inset,
+      0 0 0 8px hsl(var(--primary) / 0.28),
+      0 0 0 2px hsl(var(--primary));
+  }
+  .hm-slider-thumb--min { z-index: 3; }
+  .hm-slider-thumb--max { z-index: 2; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hm-slider-thumb, .hm-bodytype-card, .hm-choice-chip {
+      transition: none;
+    }
+  }
 }
 
 @layer utilities {
@@ -1531,7 +2007,12 @@
   }
 
   .hm-profile-edit-grid {
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 22px;
+  }
+
+  .hm-profile-edit-grid > :nth-child(2) {
+    top: 16px;
   }
 }
 
@@ -1584,10 +2065,12 @@
 
   .hm-profile-edit-grid {
     grid-template-columns: 1fr;
+    width: 100%;
   }
 
-  .hm-profile-edit-grid > :last-child {
+  .hm-profile-edit-grid > :nth-child(2) {
     order: -1;
+    position: static;
   }
 
   .hm-matches-grid {

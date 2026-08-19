@@ -254,6 +254,7 @@ export class OnboardingPage {
           displayName: m.displayName,
           birthDate: m.birthDate,
           gender: m.gender as Gender,
+          bodyType: null,
           city: m.city,
           state: m.state,
           country: m.country,
@@ -263,9 +264,14 @@ export class OnboardingPage {
           minAge: Number(m.minAge),
           maxAge: Number(m.maxAge),
           maxDistanceKm: Number(m.maxDistanceKm),
+          strictAge: false,
+          strictDistance: false,
           discoverable: m.discoverable,
+          recentlyActiveFirst: false,
+          globalMode: false,
           interests,
-          lookingFor: Array.from(this.lookingForSet())
+          lookingFor: Array.from(this.lookingForSet()),
+          preferredBodyTypes: []
         };
         const saved = await firstValueFrom(this.profileApi.save(payload));
         this.profileStore.clear();
