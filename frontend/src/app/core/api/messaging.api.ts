@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ConversationView, MessageView } from './contracts';
+import { ConversationView, MessageReactionView, MessageView } from './contracts';
 
 @Injectable({ providedIn: 'root' })
 export class MessagingApi {
@@ -23,5 +23,9 @@ export class MessagingApi {
 
   markRead(conversationId: string): Observable<void> {
     return this.http.post<void>(`/api/v1/conversations/${conversationId}/read`, {});
+  }
+
+  toggleHeart(conversationId: string, messageId: string): Observable<MessageReactionView> {
+    return this.http.put<MessageReactionView>(`/api/v1/conversations/${conversationId}/messages/${messageId}/heart`, {});
   }
 }

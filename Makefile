@@ -24,7 +24,7 @@ frontend-build:
 angular-skill:
 	./scripts/install-official-angular-skill.sh
 
-.PHONY: match-test match-e2e
+.PHONY: match-test match-e2e social-test
 
 match-test:
 	cd backend && mvn -Dtest=InteractionServiceMatchTest,MatchServiceTest,MatchReconciliationListenerTest,MatchLifecycleTest test
@@ -32,3 +32,7 @@ match-test:
 
 match-e2e:
 	./scripts/e2e-match-flow.sh
+
+social-test:
+	cd backend && mvn -Dtest=MessagingServiceSocialTest,NotificationServiceTest,ProfileServiceTest,LocationServiceTest test
+	cd frontend && npm test -- --watch=false

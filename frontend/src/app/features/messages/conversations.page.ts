@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView, PhotoView, PublicProfileView } from '../../core/api/contracts';
+import type { ConversationView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
 import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
@@ -63,11 +63,13 @@ import { IconComponent } from '../../ui/icon/icon.component';
               >
                 <div class="relative shrink-0">
                   <hm-avatar [src]="firstPhoto(userId)" [name]="profileFor(userId)?.displayName || 'Match'" [size]="56" />
-                  <span class="hm-online-dot"></span>
+                  @if (presenceFor(userId)?.online) { <span class="hm-online-dot"></span> }
                 </div>
                 <div class="min-w-0 flex-1">
                   <strong class="block truncate text-[15px]">{{ profileFor(userId)?.displayName || 'Match' }}</strong>
-                  <span class="mt-1 block truncate text-xs text-white/45">Toque para abrir a conversa</span>
+                  <span class="mt-1 block truncate text-xs" [class.text-emerald-400]="presenceFor(userId)?.online" [class.text-white/45]="!presenceFor(userId)?.online">
+                    {{ presenceFor(userId)?.online ? 'Online agora' : 'Toque para abrir a conversa' }}
+                  </span>
                 </div>
                 <hm-icon name="arrow-right" size="18" class="text-white/30" />
               </a>
@@ -90,6 +92,7 @@ export class ConversationsPage implements OnInit {
   readonly conversations = signal<ConversationView[]>([]);
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
+  readonly presences = signal<Record<string, PresenceView>>({});
 
   async ngOnInit(): Promise<void> {
     await this.load();
@@ -105,6 +108,10 @@ export class ConversationsPage implements OnInit {
 
   firstPhoto(userId: string): string | null {
     return [...(this.photos()[userId] ?? [])].sort((a, b) => a.position - b.position)[0]?.url ?? null;
+  }
+
+  presenceFor(userId: string): PresenceView | null {
+    return this.presences()[userId] ?? null;
   }
 
   async load(): Promise<void> {
@@ -132,7 +139,22 @@ export class ConversationsPage implements OnInit {
         if (pair) profileMap[pair[0]] = pair[1];
       }
       this.profiles.set(profileMap);
-      this.photos.set(ids.length ? await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})) : {});
+      if (ids.length) {
+        const [photos, presencePairs] = await Promise.all([
+          firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})),
+          Promise.all(ids.map(async id => {
+            try { return [id, await firstValueFrom(this.profileApi.presence(id))] as const; }
+            catch { return null; }
+          }))
+        ]);
+        this.photos.set(photos);
+        const map: Record<string, PresenceView> = {};
+        for (const pair of presencePairs) if (pair) map[pair[0]] = pair[1];
+        this.presences.set(map);
+      } else {
+        this.photos.set({});
+        this.presences.set({});
+      }
     } catch {
       this.error.set('Tente novamente em alguns instantes.');
     } finally {

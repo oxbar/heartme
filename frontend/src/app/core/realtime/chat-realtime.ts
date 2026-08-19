@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Client, IMessage, StompSubscription } from '@stomp/stompjs';
 import { Observable } from 'rxjs';
-import { MessageView } from '../api/contracts';
+import { MessageReactionEvent, MessageView, ReadReceiptView } from '../api/contracts';
 import { SessionStore } from '../auth/session.store';
 
 @Injectable({ providedIn: 'root' })
@@ -22,11 +22,24 @@ export class ChatRealtime {
   }
 
   messages(conversationId: string): Observable<MessageView> {
-    return new Observable<MessageView>(subscriber => {
+    return this.topic<MessageView>(`/topic/conversations/${conversationId}`);
+  }
+
+  receipts(conversationId: string): Observable<ReadReceiptView> {
+    return this.topic<ReadReceiptView>(`/topic/conversations/${conversationId}/receipts`);
+  }
+
+  reactions(conversationId: string): Observable<MessageReactionEvent> {
+    return this.topic<MessageReactionEvent>(`/topic/conversations/${conversationId}/reactions`);
+  }
+
+  private topic<T>(destination: string): Observable<T> {
+    return new Observable<T>(subscriber => {
       let subscription: StompSubscription | undefined;
       const subscribe = () => {
-        subscription = this.client.subscribe(`/topic/conversations/${conversationId}`, (message: IMessage) => {
-          subscriber.next(JSON.parse(message.body) as MessageView);
+        subscription?.unsubscribe();
+        subscription = this.client.subscribe(destination, (message: IMessage) => {
+          subscriber.next(JSON.parse(message.body) as T);
         });
       };
       const previous = this.client.onConnect;

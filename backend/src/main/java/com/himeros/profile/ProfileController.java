@@ -43,6 +43,20 @@ public class ProfileController {
                 .orElseThrow(() -> new ResourceNotFoundException("Profile not found"));
     }
 
+    @PostMapping("/presence")
+    public PresenceView pingPresence() {
+        return presenceView(service.touchPresence(current.id()));
+    }
+
+    @GetMapping("/{userId}/presence")
+    public PresenceView presence(@PathVariable UUID userId) {
+        if (safety.blockedEitherWay(current.id(), userId)) {
+            throw new ResourceNotFoundException("Profile not found");
+        }
+        return service.find(userId).map(ProfileController::presenceView)
+                .orElseThrow(() -> new ResourceNotFoundException("Profile not found"));
+    }
+
     @PutMapping
     public ProfileQuery.ProfileView upsert(@Valid @RequestBody Request r) {
         return service.upsert(current.id(), new ProfileService.UpsertCommand(
@@ -54,12 +68,20 @@ public class ProfileController {
                 r.interests(), r.lookingFor(), r.preferredBodyTypes()));
     }
 
+    private static PresenceView presenceView(ProfileQuery.ProfileView p) {
+        java.time.Instant lastSeen = p.lastActiveAt();
+        boolean online = lastSeen != null && lastSeen.isAfter(java.time.Instant.now().minusSeconds(90));
+        return new PresenceView(p.userId(), online, lastSeen);
+    }
+
     private static PublicProfileView publicView(ProfileQuery.ProfileView p) {
         int age = Period.between(p.birthDate(), LocalDate.now()).getYears();
         return new PublicProfileView(
                 p.userId(), p.displayName(), p.bio(), age, p.gender(), p.bodyType(),
                 p.city(), p.state(), p.country(), p.interests());
     }
+
+    public record PresenceView(UUID userId, boolean online, java.time.Instant lastSeenAt) {}
 
     public record PublicProfileView(
             UUID userId,

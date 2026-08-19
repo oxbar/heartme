@@ -69,6 +69,15 @@ public class ProfileService implements ProfileQuery {
             .stream().map(ProfileService::view).toList();
     }
 
+
+    @Transactional
+    public ProfileView touchPresence(UUID userId) {
+        java.time.Instant now = java.time.Instant.now();
+        repo.touchActivity(userId, now, now.minusSeconds(20));
+        return repo.findById(userId).map(ProfileService::view)
+                .orElseThrow(() -> new com.himeros.shared.ResourceNotFoundException("Profile not found"));
+    }
+
     @EventListener
     @Transactional
     public void on(UserActivityObserved event) {

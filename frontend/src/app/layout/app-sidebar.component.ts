@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { filter, firstValueFrom } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { ConversationView, MatchView, PhotoView, PublicProfileView } from '../core/api/contracts';
+import type { ConversationView, MatchView, PhotoView, PresenceView, PublicProfileView } from '../core/api/contracts';
 import { MatchApi } from '../core/api/match.api';
 import { MessagingApi } from '../core/api/messaging.api';
 import { ProfileApi } from '../core/api/profile.api';
@@ -25,7 +25,6 @@ import { IconComponent } from '../ui/icon/icon.component';
             [src]="ownPhoto()"
             [name]="ownName()"
             [size]="38"
-            class="ring-2 ring-white/80"
           />
           <span class="truncate">{{ ownName() }}</span>
         </a>
@@ -119,11 +118,13 @@ import { IconComponent } from '../ui/icon/icon.component';
                         [name]="profileFor(otherUser(conversation))?.displayName || 'Match'"
                         [size]="58"
                       />
-                      <span class="hm-online-dot" aria-label="Ativo recentemente"></span>
+                      @if (presenceFor(otherUser(conversation))?.online) {
+                        <span class="hm-online-dot" aria-label="Online"></span>
+                      }
                     </div>
                     <div class="min-w-0 flex-1">
                       <strong class="truncate">{{ profileFor(otherUser(conversation))?.displayName || 'Match' }}</strong>
-                      <span class="truncate">Vocês deram match — toque para conversar</span>
+                      <span class="truncate">{{ presenceFor(otherUser(conversation))?.online ? 'Online agora' : 'Vocês deram match — toque para conversar' }}</span>
                     </div>
                   </a>
                 }
@@ -137,14 +138,14 @@ import { IconComponent } from '../ui/icon/icon.component';
               </a>
               @for (match of matches().slice(0, 17); track match.id) {
                 @let otherId = otherUser(match);
-                <a [routerLink]="['/app/profiles', otherId]" class="hm-match-tile">
+                <a [routerLink]="matchRoute(match)" class="hm-match-tile">
                   @if (photoFor(otherId)) {
                     <img [src]="photoFor(otherId)!" [alt]="profileFor(otherId)?.displayName || 'Match'" loading="lazy" />
                   } @else {
                     <div class="hm-match-fallback">{{ initials(profileFor(otherId)?.displayName || 'H') }}</div>
                   }
                   <span class="hm-match-name">{{ profileFor(otherId)?.displayName || 'Match' }}</span>
-                  <span class="hm-match-dot" aria-hidden="true"></span>
+                  @if (presenceFor(otherId)?.online) { <span class="hm-match-dot" aria-label="Online"></span> }
                 </a>
               }
             </div>
@@ -173,7 +174,9 @@ export class AppSidebarComponent {
   readonly conversations = signal<ConversationView[]>([]);
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
+  readonly presences = signal<Record<string, PresenceView>>({});
   readonly ownPhoto = signal<string | null>(null);
+  private presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
 
   readonly profileMode = computed(() => {
     const path = this.activeUrl().split(/[?#]/)[0];
@@ -192,9 +195,22 @@ export class AppSidebarComponent {
   constructor() {
     this.router.events
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd), takeUntilDestroyed(this.destroyRef))
-      .subscribe(event => this.activeUrl.set(event.urlAfterRedirects));
+      .subscribe(event => {
+        this.activeUrl.set(event.urlAfterRedirects);
+        if (event.urlAfterRedirects.startsWith('/app/matches') || event.urlAfterRedirects.startsWith('/app/messages')) {
+          void this.load();
+        }
+      });
 
     void this.load();
+    void firstValueFrom(this.profileApi.pingPresence()).catch(() => null);
+    this.presenceHeartbeat = setInterval(
+      () => void firstValueFrom(this.profileApi.pingPresence()).catch(() => null),
+      45_000
+    );
+    this.destroyRef.onDestroy(() => {
+      if (this.presenceHeartbeat) clearInterval(this.presenceHeartbeat);
+    });
   }
 
   profileFor(userId: string): PublicProfileView | null {
@@ -206,6 +222,10 @@ export class AppSidebarComponent {
     return [...list].sort((a, b) => a.position - b.position)[0]?.url ?? null;
   }
 
+  presenceFor(userId: string): PresenceView | null {
+    return this.presences()[userId] ?? null;
+  }
+
   otherUser(item: MatchView | ConversationView): string {
     const currentUserId = this.session.userId();
     return item.userA === currentUserId ? item.userB : item.userA;
@@ -213,6 +233,11 @@ export class AppSidebarComponent {
 
   initials(name: string): string {
     return name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'H';
+  }
+
+  matchRoute(match: MatchView): (string | number)[] {
+    const conversation = this.conversations().find(item => item.matchId === match.id);
+    return conversation ? ['/app/messages', conversation.id] : ['/app/profiles', this.otherUser(match)];
   }
 
   private async load(): Promise<void> {
@@ -253,7 +278,17 @@ export class AppSidebarComponent {
       this.profiles.set(profileMap);
 
       if (userIds.length) {
-        this.photos.set(await firstValueFrom(this.mediaApi.batch(userIds)).catch(() => ({})));
+        const [photos, presencePairs] = await Promise.all([
+          firstValueFrom(this.mediaApi.batch(userIds)).catch(() => ({})),
+          Promise.all(userIds.map(async userId => {
+            try { return [userId, await firstValueFrom(this.profileApi.presence(userId))] as const; }
+            catch { return null; }
+          }))
+        ]);
+        this.photos.set(photos);
+        const presenceMap: Record<string, PresenceView> = {};
+        for (const pair of presencePairs) if (pair) presenceMap[pair[0]] = pair[1];
+        this.presences.set(presenceMap);
       }
     } finally {
       this.socialLoading.set(false);

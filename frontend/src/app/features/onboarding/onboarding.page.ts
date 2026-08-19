@@ -1,9 +1,10 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { form, FormField, minLength, required, submit } from '@angular/forms/signals';
 import { ProfileApi } from '../../core/api/profile.api';
+import { LocationApi } from '../../core/api/location.api';
 import { ProfileStore } from '../../core/state/profile.store';
-import type { Gender } from '../../core/api/contracts';
+import type { BrazilianCityView, BrazilianStateView, Gender } from '../../core/api/contracts';
 import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from '../../ui/icon/icon.component';
@@ -33,6 +34,14 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
   { value: 'NON_BINARY', label: 'Não-binários' },
   { value: 'OTHER', label: 'Outros' }
 ];
+
+const ONBOARDING_INTEREST_GROUPS = [
+  { title: 'Estilo de vida', items: ['Academia', 'Viagens', 'Trilhas', 'Praia', 'Gastronomia', 'Café', 'Pets', 'Natureza'] },
+  { title: 'Cultura', items: ['Música', 'Cinema', 'Séries', 'Livros', 'Fotografia', 'Arte', 'Museus', 'Teatro'] },
+  { title: 'Social', items: ['Amigos', 'Família', 'Festas', 'Bares', 'Shows', 'Festivais', 'Churrasco', 'Eventos'] },
+  { title: 'Esportes & hobbies', items: ['Corrida', 'Ciclismo', 'Futebol', 'Dança', 'Games', 'Tecnologia', 'Culinária', 'Yoga'] }
+] as const;
+
 
 @Component({
   imports: [FormField, CommonModule, IconComponent, SliderComponent, SwitchComponent],
@@ -125,25 +134,38 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
                 </div>
                 <div class="grid sm:grid-cols-2 gap-4 mt-2">
                   <div>
-                    <label for="ob-city" class="block text-xs font-semibold text-foreground/80 mb-1.5">Cidade</label>
-                    <input
-                      id="ob-city" type="text"
-                      class="hm-ob-input"
-                      [formField]="onboardingForm.city"
-                      placeholder="São Paulo"
-                    />
-                    @if (onboardingForm.city().touched() && onboardingForm.city().invalid()) {
-                      <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.city().errors()[0]?.message }}</p>
-                    }
-                  </div>
-                  <div>
                     <label for="ob-state" class="block text-xs font-semibold text-foreground/80 mb-1.5">Estado</label>
                     <input
                       id="ob-state" type="text"
                       class="hm-ob-input"
+                      list="ob-state-options"
                       [formField]="onboardingForm.state"
-                      placeholder="SP"
+                      (input)="onStateInput($event)"
+                      placeholder="Santa Catarina"
                     />
+                    <datalist id="ob-state-options">
+                      @for (state of states(); track state.code) { <option [value]="state.name">{{ state.code }}</option> }
+                    </datalist>
+                  </div>
+                  <div>
+                    <label for="ob-city" class="block text-xs font-semibold text-foreground/80 mb-1.5">Cidade</label>
+                    <div class="relative">
+                      <input
+                        id="ob-city" type="text"
+                        class="hm-ob-input"
+                        list="ob-city-options"
+                        [formField]="onboardingForm.city"
+                        (input)="onCityInput($event)"
+                        [placeholder]="cityLoading() ? 'Carregando cidades…' : 'Blumenau'"
+                      />
+                      @if (cityLoading()) { <hm-icon name="loader-2" size="15" class="absolute right-3 top-3.5 animate-spin text-muted-foreground" /> }
+                    </div>
+                    <datalist id="ob-city-options">
+                      @for (city of cities(); track city.id) { <option [value]="city.name"></option> }
+                    </datalist>
+                    @if (onboardingForm.city().touched() && onboardingForm.city().invalid()) {
+                      <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.city().errors()[0]?.message }}</p>
+                    }
                   </div>
                 </div>
               </div>
@@ -200,24 +222,35 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
               <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-4 pb-2 border-b border-border">
                 Interesses
               </h2>
-              <p class="text-sm text-muted-foreground mb-4">Escreva abaixo e pressione Enter ou vírgula para adicionar. Remova clicando no X.</p>
-              <div class="flex flex-wrap gap-2 mb-3">
-                @for (tag of interests(); track tag) {
-                  <span class="hm-ob-chip" (click)="removeInterest(tag)">
-                    <span class="text-xs font-extrabold text-foreground">{{ tag }}</span>
-                    <hm-icon name="x" size="14" />
-                  </span>
+              <p class="text-sm text-muted-foreground mb-4">Escolha alguns interesses tocando nas opções. Isso ajuda a personalizar suas recomendações.</p>
+              <div class="grid gap-3">
+                @for (group of interestGroups; track group.title) {
+                  <div class="hm-ob-interest-group">
+                    <strong>{{ group.title }}</strong>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                      @for (interest of group.items; track interest) {
+                        <button type="button" class="hm-ob-interest-option" [class.is-selected]="hasInterest(interest)" (click)="toggleInterest(interest)">
+                          @if (hasInterest(interest)) { <hm-icon name="check" size="12" /> }
+                          {{ interest }}
+                        </button>
+                      }
+                    </div>
+                  </div>
                 }
               </div>
-              <input
-                type="text"
-                class="hm-ob-input"
-                [value]="interestDraft()"
-                (input)="onInterestInput($event)"
-                (keydown)="onInterestKey($event)"
-                (blur)="commitDraft()"
-                placeholder="Adicione um interesse (ex: trilhas, música, cinema, academia)…"
-              />
+              @if (interests().length) {
+                <div class="flex flex-wrap gap-2 mt-4 mb-3">
+                  @for (tag of interests(); track tag) {
+                    <span class="hm-ob-chip" (click)="removeInterest(tag)">
+                      <span class="text-xs font-extrabold text-foreground">{{ tag }}</span><hm-icon name="x" size="14" />
+                    </span>
+                  }
+                </div>
+              }
+              <div class="grid grid-cols-[1fr_auto] gap-2 mt-3">
+                <input type="text" class="hm-ob-input" [value]="interestDraft()" (input)="onInterestInput($event)" (keydown)="onInterestKey($event)" (blur)="commitDraft()" placeholder="Outro interesse…" />
+                <button type="button" class="rounded-xl border border-border px-4 text-sm font-bold text-foreground hover:bg-accent" (click)="commitDraft()">Adicionar</button>
+              </div>
             </div>
 
             <!-- CONFIGURAÇÕES DE DESCOBERTA -->
@@ -379,15 +412,25 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class OnboardingPage {
+export class OnboardingPage implements OnInit {
   private readonly profileApi = inject(ProfileApi);
+  private readonly locationApi = inject(LocationApi);
   private readonly profileStore = inject(ProfileStore);
   private readonly router = inject(Router);
 
   protected readonly BODY_TYPE_OPTIONS = BODY_TYPE_OPTIONS;
   protected readonly GENDER_INTEREST_OPTIONS = GENDER_INTEREST_OPTIONS;
+  protected readonly interestGroups = ONBOARDING_INTEREST_GROUPS;
 
   readonly error = signal('');
+  readonly states = signal<BrazilianStateView[]>([]);
+  readonly cities = signal<BrazilianCityView[]>([]);
+  readonly cityLoading = signal(false);
+  private loadedCitiesFor = '';
+
+  async ngOnInit(): Promise<void> {
+    this.states.set(await firstValueFrom(this.locationApi.states()).catch(() => [] as BrazilianStateView[]));
+  }
 
   readonly lookingForSet = signal<Set<Gender>>(new Set());
   readonly preferredBodySet = signal<Set<BodyType>>(new Set());
@@ -443,6 +486,53 @@ export class OnboardingPage {
     this.preferredBodySet.set(next);
   }
 
+  hasInterest(interest: string): boolean {
+    const key = this.normalize(interest);
+    return this.interests().some(item => this.normalize(item) === key);
+  }
+
+  toggleInterest(interest: string): void {
+    const key = this.normalize(interest);
+    const existing = this.interests().find(item => this.normalize(item) === key);
+    if (existing) this.removeInterest(existing);
+    else if (this.interests().length < 30) this.interests.update(list => [...list, interest]);
+  }
+
+  onStateInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    const previous = this.model().state;
+    const state = this.states().find(item =>
+      this.normalize(item.name) === this.normalize(value) || this.normalize(item.code) === this.normalize(value));
+    this.model.update(model => ({
+      ...model,
+      state: value,
+      city: state && this.normalize(previous) !== this.normalize(value) ? '' : model.city,
+      latitude: null,
+      longitude: null
+    }));
+    if (state) {
+      void this.loadCities(state.code);
+    } else {
+      this.cities.set([]);
+      this.loadedCitiesFor = '';
+    }
+  }
+
+  onCityInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.model.update(model => ({ ...model, city: value, latitude: null, longitude: null }));
+  }
+
+  private async loadCities(state: string): Promise<void> {
+    const key = this.normalize(state);
+    if (!key || this.loadedCitiesFor === key) return;
+    this.loadedCitiesFor = key;
+    this.cityLoading.set(true);
+    try { this.cities.set(await firstValueFrom(this.locationApi.cities(state))); }
+    catch { this.cities.set([]); }
+    finally { this.cityLoading.set(false); }
+  }
+
   onInterestInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value ?? '';
     this.interestDraft.set(value);
@@ -471,13 +561,34 @@ export class OnboardingPage {
       if (trimmed) parts.push(trimmed);
     }
     if (parts.length === 0) return;
-    const deduped = Array.from(new Set([...this.interests(), ...parts])).slice(0, 50);
-    this.interests.set(deduped);
+    const merged = [...this.interests()];
+    for (const part of parts) {
+      if (merged.length >= 30) break;
+      if (!merged.some(item => this.normalize(item) === this.normalize(part))) merged.push(part);
+    }
+    this.interests.set(merged);
     this.interestDraft.set('');
   }
 
   removeInterest(tag: string): void {
     this.interests.set(this.interests().filter(i => i !== tag));
+  }
+
+  private normalize(value: string): string {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  }
+
+  private locationSelectionValid(): boolean {
+    const current = this.model();
+    if (this.states().length) {
+      const state = this.states().find(item =>
+        this.normalize(item.name) === this.normalize(current.state) || this.normalize(item.code) === this.normalize(current.state));
+      if (!state) return false;
+    }
+    if (this.cities().length && !this.cities().some(city => this.normalize(city.name) === this.normalize(current.city))) {
+      return false;
+    }
+    return true;
   }
 
   onSubmit(event: Event): void {
@@ -486,6 +597,10 @@ export class OnboardingPage {
 
     if (this.lookingForSet().size === 0) {
       this.error.set('Selecione pelo menos uma opção em “Interessado em” para configurar seu Discovery.');
+      return;
+    }
+    if (!this.locationSelectionValid()) {
+      this.error.set('Escolha um estado brasileiro e, quando houver sugestões, uma cidade da lista.');
       return;
     }
 

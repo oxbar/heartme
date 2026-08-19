@@ -5,6 +5,7 @@ import type { InteractionType, PhotoView, Recommendation } from '../../core/api/
 import { DiscoveryApi } from '../../core/api/discovery.api';
 import { MediaApi } from '../../core/api/media.api';
 import { MatchApi } from '../../core/api/match.api';
+import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileCardComponent } from '../../shared/profile-card.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 
@@ -89,20 +90,33 @@ import { IconComponent } from '../../ui/icon/icon.component';
     </section>
 
     @if (matchCelebration(); as match) {
-      <div class="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="match-title">
-        <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-[#111214] p-7 text-center shadow-2xl">
-          <div class="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-primary">
-            <hm-icon name="heart" size="32" />
+      <div class="hm-match-celebration" role="dialog" aria-modal="true" aria-labelledby="match-title">
+        <div class="hm-match-confetti" aria-hidden="true">
+          @for (_ of [0,1,2,3,4,5,6,7,8,9,10,11]; track _) { <span [style.--i]="_"></span> }
+        </div>
+        <div class="hm-match-celebration-card">
+          <p class="hm-match-kicker">CONEXÃO RECÍPROCA</p>
+          <h2 id="match-title">It's a Match!</h2>
+          <p class="hm-match-celebration-copy">Você e {{ match.displayName }} curtiram um ao outro.</p>
+
+          <div class="hm-match-faces" aria-label="Fotos do novo match">
+            <div class="hm-match-face is-me">
+              @if (ownPhoto()) { <img [src]="ownPhoto()!" alt="Sua foto" /> }
+              @else { <span>VOCÊ</span> }
+            </div>
+            <div class="hm-match-heart-badge"><hm-icon name="heart" size="25" /></div>
+            <div class="hm-match-face is-them">
+              @if (firstPhoto(match.userId); as photo) { <img [src]="photo" [alt]="'Foto de ' + match.displayName" /> }
+              @else { <span>{{ initials(match.displayName) }}</span> }
+            </div>
           </div>
-          <p class="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-primary">É recíproco</p>
-          <h2 id="match-title" class="text-3xl font-extrabold text-white">Deu match!</h2>
-          <p class="mt-2 text-sm leading-relaxed text-white/65">Você e {{ match.displayName }} curtiram um ao outro.</p>
-          <div class="mt-6 grid gap-3">
-            <button type="button" class="hm-dark-button is-primary justify-center" (click)="openMatches()">
-              <hm-icon name="message-circle" size="17" />
-              Conversar agora
+
+          <div class="hm-match-celebration-actions">
+            <button type="button" class="hm-match-message-action" (click)="openMatches()">
+              <hm-icon name="message-circle" size="18" />
+              Enviar uma mensagem
             </button>
-            <button type="button" class="hm-dark-button justify-center" (click)="dismissMatch()">
+            <button type="button" class="hm-match-keep-action" (click)="dismissMatch()">
               Continuar descobrindo
             </button>
           </div>
@@ -116,6 +130,7 @@ export class DiscoverPage implements OnInit {
   private readonly api = inject(DiscoveryApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly matchApi = inject(MatchApi);
+  private readonly messagingApi = inject(MessagingApi);
   private readonly router = inject(Router);
 
   @ViewChild(ProfileCardComponent) profileCard?: ProfileCardComponent;
@@ -124,6 +139,7 @@ export class DiscoverPage implements OnInit {
   readonly error = signal('');
   readonly recommendations = signal<Recommendation[]>([]);
   readonly photosByUser = signal<Record<string, PhotoView[]>>({});
+  readonly ownPhoto = signal<string | null>(null);
   readonly actionPending = signal(false);
   readonly nextCursor = signal<string | null>(null);
   readonly matchCelebration = signal<{ userId: string; displayName: string } | null>(null);
@@ -173,7 +189,11 @@ export class DiscoverPage implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      const page = await firstValueFrom(this.api.discoverPage(24));
+      const [page, ownPhotos] = await Promise.all([
+        firstValueFrom(this.api.discoverPage(24)),
+        firstValueFrom(this.mediaApi.mine()).catch(() => [] as PhotoView[])
+      ]);
+      this.ownPhoto.set([...ownPhotos].sort((a, b) => a.position - b.position)[0]?.url ?? null);
       this.recommendations.set(page.items);
       this.nextCursor.set(page.nextCursor);
       const ids = page.items.map(item => item.profile.userId);
@@ -261,7 +281,19 @@ export class DiscoverPage implements OnInit {
   }
 
   async openMatches(): Promise<void> {
+    const celebration = this.matchCelebration();
     this.matchCelebration.set(null);
+    if (celebration) {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const conversations = await firstValueFrom(this.messagingApi.conversations()).catch(() => []);
+        const conversation = conversations.find(item => item.userA === celebration.userId || item.userB === celebration.userId);
+        if (conversation) {
+          await this.router.navigate(['/app/messages', conversation.id]);
+          return;
+        }
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+      }
+    }
     await this.router.navigate(['/app/matches']);
   }
 

@@ -86,6 +86,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         }
 
         String rawId = destination.substring(CONVERSATION_TOPIC.length());
+        int slash = rawId.indexOf('/');
+        if (slash >= 0) rawId = rawId.substring(0, slash);
         UUID conversationId;
         UUID userId;
         try {

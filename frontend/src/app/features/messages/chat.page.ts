@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, ViewChild, afterNextRender, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, ViewChild, afterNextRender, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
-import type { MessageView, PhotoView, PublicProfileView } from '../../core/api/contracts';
+import type { ConversationView, MessageView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
+import { MatchApi } from '../../core/api/match.api';
 import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
@@ -24,10 +25,13 @@ import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.c
             <hm-icon name="arrow-left" size="19" />
           </a>
           @if (profile(); as currentProfile) {
-            <hm-avatar [src]="primaryPhoto()" [name]="currentProfile.displayName" [size]="42" />
+            <div class="relative shrink-0">
+              <hm-avatar [src]="primaryPhoto()" [name]="currentProfile.displayName" [size]="44" />
+              @if (presence()?.online) { <span class="hm-online-dot is-chat" aria-label="Online"></span> }
+            </div>
             <div class="min-w-0 flex-1">
               <h2>{{ currentProfile.displayName }}</h2>
-              <p>Vocês deram match · seja respeitoso e autêntico</p>
+              <p [class.text-emerald-400]="presence()?.online">{{ presenceLabel() }}</p>
             </div>
             <a [routerLink]="['/app/profiles', currentProfile.userId]" class="hm-mobile-icon-button" aria-label="Abrir perfil">
               <hm-icon name="menu" size="19" />
@@ -42,54 +46,61 @@ import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.c
         </header>
 
         <div #scrollRef class="hm-chat-messages" aria-live="polite">
-          @if (loading()) {
-            <div class="space-y-4">
-              @for (_ of [0,1,2,3,4,5]; track _) {
-                <div class="flex" [class.justify-end]="_ % 2 === 1">
-                  <div class="h-14 w-[min(65%,320px)] animate-pulse rounded-2xl bg-white/5"></div>
-                </div>
-              }
-            </div>
-          } @else if (error()) {
-            <div class="hm-page-empty-center min-h-full">
-              <div class="hm-page-empty-icon"><hm-icon name="alert-circle" size="27" /></div>
-              <strong>Não foi possível abrir a conversa</strong>
-              <span>{{ error() }}</span>
-              <button type="button" class="hm-dark-button is-primary" (click)="load()">Tentar novamente</button>
-            </div>
-          } @else if (!messages().length) {
-            <div class="hm-page-empty-center min-h-full">
-              <div class="hm-page-empty-icon"><hm-icon name="message-circle" size="29" /></div>
-              <strong>Comece a conversa</strong>
-              <span>Uma mensagem simples e personalizada costuma ser um ótimo começo.</span>
-            </div>
-          } @else {
-            <div class="space-y-3">
-              @for (message of messages(); track message.id) {
-                <hm-message-bubble [message]="message" />
-              }
-            </div>
-          }
+          <div class="hm-chat-thread">
+            @if (loading()) {
+              <div class="space-y-4">
+                @for (_ of [0,1,2,3,4,5]; track _) {
+                  <div class="flex" [class.justify-end]="_ % 2 === 1">
+                    <div class="h-14 w-[min(65%,320px)] animate-pulse rounded-2xl bg-white/5"></div>
+                  </div>
+                }
+              </div>
+            } @else if (error()) {
+              <div class="hm-page-empty-center min-h-[50vh]">
+                <div class="hm-page-empty-icon"><hm-icon name="alert-circle" size="27" /></div>
+                <strong>Não foi possível abrir a conversa</strong>
+                <span>{{ error() }}</span>
+                <button type="button" class="hm-dark-button is-primary" (click)="load()">Tentar novamente</button>
+              </div>
+            } @else if (!messages().length) {
+              <div class="hm-page-empty-center min-h-[50vh]">
+                <div class="hm-page-empty-icon"><hm-icon name="message-circle" size="29" /></div>
+                <strong>Comece a conversa</strong>
+                <span>Uma mensagem simples e personalizada costuma ser um ótimo começo.</span>
+              </div>
+            } @else {
+              <div class="space-y-2.5">
+                @for (message of messages(); track message.id) {
+                  <hm-message-bubble [message]="message" (toggleHeart)="toggleHeart($event)" />
+                }
+              </div>
+            }
+          </div>
         </div>
 
         <form class="hm-chat-compose" (submit)="sendMessage($event)">
-          <input
-            [(ngModel)]="inputContent"
-            [ngModelOptions]="{ standalone: true }"
-            type="text"
-            autocomplete="off"
-            [placeholder]="'Mensagem para ' + (profile()?.displayName || 'seu match')"
-            aria-label="Mensagem"
-          />
-          <button type="submit" class="hm-chat-send" [disabled]="!inputContent.trim() || sending()" aria-label="Enviar mensagem">
-            <hm-icon name="send" size="19" />
-          </button>
+          <div class="hm-chat-compose-inner">
+            <input
+              [(ngModel)]="inputContent"
+              [ngModelOptions]="{ standalone: true }"
+              type="text"
+              autocomplete="off"
+              [placeholder]="'Mensagem para ' + (profile()?.displayName || 'seu match')"
+              aria-label="Mensagem"
+            />
+            <button type="submit" class="hm-chat-send" [disabled]="!inputContent.trim() || sending()" aria-label="Enviar mensagem">
+              <hm-icon name="send" size="19" />
+            </button>
+          </div>
         </form>
       </div>
 
       <aside class="hm-chat-profile" aria-label="Perfil do match">
         @if (profile(); as currentProfile) {
-          <div class="hm-chat-profile-title">{{ currentProfile.displayName }} {{ currentProfile.age }}</div>
+          <div class="hm-chat-profile-title">
+            <span>{{ currentProfile.displayName }} {{ currentProfile.age }}</span>
+            @if (presence()?.online) { <span class="hm-presence-badge">Online</span> }
+          </div>
           <div class="hm-chat-profile-photo">
             <hm-photo-carousel
               [photos]="photos()"
@@ -121,8 +132,12 @@ import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.c
             </section>
           }
 
-          <div class="p-4">
+          <div class="grid gap-2 p-4">
             <a [routerLink]="['/app/profiles', currentProfile.userId]" class="hm-dark-button w-full">Ver perfil completo</a>
+            <button type="button" class="hm-dark-button is-danger w-full" [disabled]="unmatching()" (click)="unmatch()">
+              <hm-icon name="heart-off" size="16" />
+              {{ unmatching() ? 'Desfazendo…' : 'Desfazer match' }}
+            </button>
           </div>
         } @else {
           <div class="space-y-3 p-5">
@@ -137,10 +152,12 @@ import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.c
 })
 export class ChatPage implements OnDestroy {
   private readonly messagingApi = inject(MessagingApi);
+  private readonly matchApi = inject(MatchApi);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly realtime = inject(ChatRealtime);
   private readonly session = inject(SessionStore);
+  private readonly router = inject(Router);
 
   @ViewChild('scrollRef') scrollRef?: ElementRef<HTMLDivElement>;
 
@@ -148,13 +165,29 @@ export class ChatPage implements OnDestroy {
   readonly loading = signal(true);
   readonly error = signal('');
   readonly sending = signal(false);
+  readonly unmatching = signal(false);
   readonly messages = signal<MessageView[]>([]);
   readonly profile = signal<PublicProfileView | null>(null);
   readonly photos = signal<PhotoView[]>([]);
   readonly primaryPhoto = signal<string | null>(null);
+  readonly conversation = signal<ConversationView | null>(null);
+  readonly presence = signal<PresenceView | null>(null);
+  readonly otherUserId = signal<string | null>(null);
+
+  readonly presenceLabel = computed(() => {
+    const value = this.presence();
+    if (!value?.lastSeenAt) return 'Vocês deram match · comece uma conversa';
+    if (value.online) return 'Online agora';
+    const last = new Date(value.lastSeenAt);
+    const now = new Date();
+    const sameDay = last.toDateString() === now.toDateString();
+    if (sameDay) return `Visto por último hoje às ${last.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    return `Visto por último ${last.toLocaleDateString([], { day: '2-digit', month: 'short' })} às ${last.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  });
 
   inputContent = '';
-  private realtimeSub: Subscription | null = null;
+  private realtimeSubs = new Subscription();
+  private presenceTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     afterNextRender(() => this.scrollToBottom());
@@ -164,24 +197,43 @@ export class ChatPage implements OnDestroy {
       this.profile.set(null);
       this.photos.set([]);
       this.primaryPhoto.set(null);
+      this.presence.set(null);
       void this.load(conversationId);
       this.startRealtime(conversationId);
     });
   }
 
   ngOnDestroy(): void {
-    this.realtimeSub?.unsubscribe();
+    this.realtimeSubs.unsubscribe();
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
   }
 
   private startRealtime(conversationId: string): void {
-    this.realtimeSub?.unsubscribe();
+    this.realtimeSubs.unsubscribe();
+    this.realtimeSubs = new Subscription();
     try {
-      this.realtimeSub = this.realtime.messages(conversationId).subscribe(message => {
+      this.realtimeSubs.add(this.realtime.messages(conversationId).subscribe(message => {
         this.messages.update(list => list.some(item => item.id === message.id) ? list : [...list, message]);
+        if (message.senderId !== this.session.userId()) void this.markConversationRead(conversationId);
         this.scrollToBottom();
-      });
+      }));
+      this.realtimeSubs.add(this.realtime.receipts(conversationId).subscribe(receipt => {
+        if (receipt.readerId === this.session.userId()) return;
+        this.messages.update(list => list.map(message =>
+          message.senderId === this.session.userId() && !message.readAt
+            ? { ...message, readAt: receipt.readAt }
+            : message
+        ));
+      }));
+      this.realtimeSubs.add(this.realtime.reactions(conversationId).subscribe(reaction => {
+        this.messages.update(list => list.map(message => message.id === reaction.messageId ? {
+          ...message,
+          heartReactionCount: reaction.heartReactionCount,
+          heartReactedByMe: reaction.actorId === this.session.userId() ? reaction.active : message.heartReactedByMe
+        } : message));
+      }));
     } catch {
-      this.realtimeSub = null;
+      this.realtimeSubs = new Subscription();
     }
   }
 
@@ -204,25 +256,62 @@ export class ChatPage implements OnDestroy {
       ]);
       this.messages.set([...messages].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()));
 
-      const conversation = conversations.find(item => item.id === conversationId);
+      const conversation = conversations.find(item => item.id === conversationId) ?? null;
+      this.conversation.set(conversation);
       if (conversation) {
         const otherId = conversation.userA === this.session.userId() ? conversation.userB : conversation.userA;
-        const [profile, photos] = await Promise.all([
+        this.otherUserId.set(otherId);
+        const [profile, photos, presence] = await Promise.all([
           firstValueFrom(this.profileApi.byUser(otherId)),
-          firstValueFrom(this.mediaApi.forUser(otherId)).catch(() => [] as PhotoView[])
+          firstValueFrom(this.mediaApi.forUser(otherId)).catch(() => [] as PhotoView[]),
+          firstValueFrom(this.profileApi.presence(otherId)).catch(() => null)
         ]);
         this.profile.set(profile);
         this.photos.set(photos);
         this.primaryPhoto.set([...photos].sort((a, b) => a.position - b.position)[0]?.url ?? null);
+        this.presence.set(presence);
+        this.startPresencePolling(otherId);
       }
 
-      await firstValueFrom(this.messagingApi.markRead(conversationId)).catch(() => undefined);
+      await this.markConversationRead(conversationId);
       this.scrollToBottom();
     } catch {
       this.error.set('Verifique sua conexão e tente novamente.');
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private startPresencePolling(otherId: string): void {
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    const tick = async () => {
+      await firstValueFrom(this.profileApi.pingPresence()).catch(() => null);
+      const presence = await firstValueFrom(this.profileApi.presence(otherId)).catch(() => null);
+      if (presence) this.presence.set(presence);
+    };
+    void tick();
+    this.presenceTimer = setInterval(() => void tick(), 30_000);
+  }
+
+  private async markConversationRead(conversationId: string): Promise<void> {
+    await firstValueFrom(this.messagingApi.markRead(conversationId)).catch(() => undefined);
+  }
+
+  toggleHeart(messageId: string): void {
+    const conversationId = this.id();
+    if (!conversationId) return;
+    void (async () => {
+      try {
+        const reaction = await firstValueFrom(this.messagingApi.toggleHeart(conversationId, messageId));
+        this.messages.update(list => list.map(message => message.id === messageId ? {
+          ...message,
+          heartReactionCount: reaction.heartReactionCount,
+          heartReactedByMe: reaction.heartReactedByMe
+        } : message));
+      } catch {
+        this.error.set('Não foi possível reagir à mensagem.');
+      }
+    })();
   }
 
   sendMessage(event: Event): void {
@@ -242,6 +331,27 @@ export class ChatPage implements OnDestroy {
         this.error.set('Sua mensagem não foi enviada. Tente novamente.');
       } finally {
         this.sending.set(false);
+      }
+    })();
+  }
+
+  unmatch(): void {
+    const conversation = this.conversation();
+    if (!conversation || this.unmatching()) return;
+    const confirmed = typeof globalThis.confirm === 'function'
+      ? globalThis.confirm('Desfazer este match? A conversa deixará de aparecer para vocês.')
+      : true;
+    if (!confirmed) return;
+
+    void (async () => {
+      this.unmatching.set(true);
+      try {
+        await firstValueFrom(this.matchApi.unmatch(conversation.matchId));
+        await this.router.navigate(['/app/matches']);
+      } catch {
+        this.error.set('Não foi possível desfazer o match. Tente novamente.');
+      } finally {
+        this.unmatching.set(false);
       }
     })();
   }

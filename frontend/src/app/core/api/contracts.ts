@@ -117,6 +117,45 @@ export interface MessageView {
   content: string;
   sentAt: string;
   readAt: string | null;
+  heartReactionCount: number;
+  heartReactedByMe: boolean;
+}
+
+export interface ReadReceiptView {
+  conversationId: string;
+  readerId: string;
+  readAt: string;
+}
+
+export interface MessageReactionView {
+  messageId: string;
+  heartReactionCount: number;
+  heartReactedByMe: boolean;
+}
+
+export interface MessageReactionEvent {
+  conversationId: string;
+  messageId: string;
+  actorId: string;
+  active: boolean;
+  heartReactionCount: number;
+  at: string;
+}
+
+export interface PresenceView {
+  userId: string;
+  online: boolean;
+  lastSeenAt: string | null;
+}
+
+export interface BrazilianStateView {
+  code: string;
+  name: string;
+}
+
+export interface BrazilianCityView {
+  id: number;
+  name: string;
 }
 
 export interface NotificationView {

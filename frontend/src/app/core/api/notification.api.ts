@@ -14,4 +14,8 @@ export class NotificationApi {
   markRead(id: string): Observable<void> {
     return this.http.post<void>(`/api/v1/notifications/${id}/read`, {});
   }
+
+  clear(): Observable<{ deleted: number }> {
+    return this.http.delete<{ deleted: number }>('/api/v1/notifications');
+  }
 }

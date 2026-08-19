@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import type { MessageView } from '../core/api/contracts';
 import { SessionStore } from '../core/auth/session.store';
 import { IconComponent } from '../ui/icon/icon.component';
@@ -8,24 +8,40 @@ import { IconComponent } from '../ui/icon/icon.component';
   imports: [IconComponent],
   standalone: true,
   template: `
-    <div class="flex w-full items-end gap-2" [class.justify-end]="isMine()">
-      <div
-        class="max-w-[min(76%,560px)] rounded-[16px] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm"
-        [class.bg-primary]="isMine()"
-        [class.text-white]="isMine()"
-        [class.rounded-br-[5px]]="isMine()"
-        [class.bg-black]="!isMine()"
-        [class.text-white/90]="!isMine()"
-        [class.rounded-bl-[5px]]="!isMine()"
-      >
+    <div class="hm-message-row" [class.is-mine]="isMine()">
+      <div class="hm-message-cluster">
+        <div class="hm-message-bubble" [class.is-mine]="isMine()">
+          @if (message(); as currentMessage) {
+            <p class="hm-message-content">{{ currentMessage.content }}</p>
+            <div class="hm-message-meta">
+              <span>{{ timestamp() }}</span>
+              @if (isMine()) {
+                <span class="hm-message-receipt" [class.is-read]="!!currentMessage.readAt" [attr.aria-label]="currentMessage.readAt ? 'Mensagem visualizada' : 'Mensagem enviada'">
+                  <hm-icon [name]="currentMessage.readAt ? 'check-check' : 'check'" size="13" />
+                </span>
+              }
+            </div>
+          }
+        </div>
+
         @if (message(); as currentMessage) {
-          <p class="whitespace-pre-wrap break-words">{{ currentMessage.content }}</p>
-          <p class="mt-1 text-right text-[10px] opacity-55">{{ timestamp() }}</p>
+          <div class="hm-message-reaction-bar" [class.is-mine]="isMine()">
+            <button
+              type="button"
+              class="hm-message-heart"
+              [class.is-active]="currentMessage.heartReactedByMe"
+              (click)="toggleHeart.emit(currentMessage.id)"
+              [attr.aria-pressed]="currentMessage.heartReactedByMe"
+              [attr.aria-label]="currentMessage.heartReactedByMe ? 'Remover coração' : 'Reagir com coração'"
+            >
+              <hm-icon name="heart" size="14" />
+              @if (currentMessage.heartReactionCount > 0) {
+                <span>{{ currentMessage.heartReactionCount }}</span>
+              }
+            </button>
+          </div>
         }
       </div>
-      @if (!isMine()) {
-        <span class="mb-1 text-white/28" aria-hidden="true"><hm-icon name="heart" size="15" /></span>
-      }
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -33,6 +49,7 @@ import { IconComponent } from '../ui/icon/icon.component';
 export class MessageBubbleComponent {
   private readonly session = inject(SessionStore);
   readonly message = input<MessageView | null>(null);
+  readonly toggleHeart = output<string>();
 
   readonly isMine = computed(() => this.message()?.senderId === this.session.userId());
   readonly timestamp = computed(() => {

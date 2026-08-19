@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 interface MessageRepository extends JpaRepository<Message,UUID> {
+    Optional<Message> findByIdAndConversationId(UUID id, UUID conversationId);
     @Query("select m from Message m where m.conversationId=:c order by m.sentAt desc")
     List<Message> latest(@Param("c") UUID c, Pageable pageable);
 

@@ -145,7 +145,8 @@ PY
 )"
 
 log "sending a message from A and reading it as B"
-api POST "/api/v1/conversations/$CONV_ID/messages" "$TOKEN_A" '{"content":"match e2e hello"}' >/dev/null
+SENT="$(api POST "/api/v1/conversations/$CONV_ID/messages" "$TOKEN_A" '{"content":"match e2e hello"}')"
+MESSAGE_ID="$(printf '%s' "$SENT" | json_field id)"
 HISTORY="$(api GET "/api/v1/conversations/$CONV_ID/messages?limit=50" "$TOKEN_B")"
 python3 - "$HISTORY" <<'PY'
 import json,sys
@@ -153,5 +154,74 @@ rows=json.loads(sys.argv[1])
 assert any(m['content']=='match e2e hello' for m in rows), rows
 PY
 
-log "PASSED: frontend proxy -> auth -> profiles -> discovery -> reciprocal LIKE -> ACTIVE match -> conversation -> message"
-log "matchId=$MATCH_ID conversationId=$CONV_ID"
+log "marking the conversation read and asserting sender receives persisted read state"
+api POST "/api/v1/conversations/$CONV_ID/read" "$TOKEN_B" '{}' >/dev/null
+HISTORY_A="$(api GET "/api/v1/conversations/$CONV_ID/messages?limit=50" "$TOKEN_A")"
+python3 - "$MESSAGE_ID" "$HISTORY_A" <<'PY'
+import json,sys
+mid=sys.argv[1]; rows=json.loads(sys.argv[2])
+message=next(m for m in rows if m['id']==mid)
+assert message['readAt'] is not None, message
+PY
+
+log "reacting with a heart from B and asserting the reaction is visible to A"
+REACTION="$(api PUT "/api/v1/conversations/$CONV_ID/messages/$MESSAGE_ID/heart" "$TOKEN_B" '{}')"
+python3 - "$REACTION" <<'PY'
+import json,sys
+r=json.loads(sys.argv[1])
+assert r['heartReactedByMe'] is True, r
+assert r['heartReactionCount']==1, r
+PY
+HISTORY_A="$(api GET "/api/v1/conversations/$CONV_ID/messages?limit=50" "$TOKEN_A")"
+python3 - "$MESSAGE_ID" "$HISTORY_A" <<'PY'
+import json,sys
+mid=sys.argv[1]; rows=json.loads(sys.argv[2])
+message=next(m for m in rows if m['id']==mid)
+assert message['heartReactionCount']==1, message
+assert message['heartReactedByMe'] is False, message
+PY
+
+log "checking online/last-seen presence through the same frontend proxy"
+api POST /api/v1/profile/presence "$TOKEN_B" '{}' >/dev/null
+PRESENCE="$(api GET "/api/v1/profile/$USER_B/presence" "$TOKEN_A")"
+python3 - "$USER_B" "$PRESENCE" <<'PY'
+import json,sys
+uid=sys.argv[1]; p=json.loads(sys.argv[2])
+assert p['userId']==uid, p
+assert p['online'] is True, p
+assert p['lastSeenAt'], p
+PY
+
+log "checking actionable MESSAGE notification for B"
+NOTIFICATIONS="$(api GET '/api/v1/notifications?limit=100' "$TOKEN_B")"
+python3 - "$CONV_ID" "$NOTIFICATIONS" <<'PY'
+import json,sys
+conversation_id=sys.argv[1]; rows=json.loads(sys.argv[2])
+message_notifications=[n for n in rows if n['type']=='MESSAGE']
+assert message_notifications, rows
+assert any(json.loads(n['dataJson']).get('conversationId')==conversation_id for n in message_notifications), message_notifications
+PY
+
+log "unmatching and asserting the old chat is no longer authorized"
+api DELETE "/api/v1/matches/$MATCH_ID" "$TOKEN_A" >/dev/null
+MATCH_AFTER="$(api GET /api/v1/matches "$TOKEN_B")"
+python3 - "$MATCH_ID" "$MATCH_AFTER" <<'PY'
+import json,sys
+mid=sys.argv[1]; rows=json.loads(sys.argv[2])
+assert all(m['id'] != mid or m['status'] != 'ACTIVE' for m in rows), rows
+PY
+HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $TOKEN_B" \
+  "$BASE_URL/api/v1/conversations/$CONV_ID/messages?limit=10")"
+[[ "$HTTP_CODE" == "403" ]] || fail "expected old conversation to return 403 after unmatch, got $HTTP_CODE"
+
+log "clearing B notifications"
+api DELETE /api/v1/notifications "$TOKEN_B" >/dev/null
+NOTIFICATIONS_AFTER="$(api GET '/api/v1/notifications?limit=100' "$TOKEN_B")"
+python3 - "$NOTIFICATIONS_AFTER" <<'PY'
+import json,sys
+assert json.loads(sys.argv[1]) == [], sys.argv[1]
+PY
+
+log "PASSED: proxy -> auth -> discovery -> match -> conversation -> read receipt -> reaction -> presence -> notification -> unmatch"
+log "matchId=$MATCH_ID conversationId=$CONV_ID messageId=$MESSAGE_ID"

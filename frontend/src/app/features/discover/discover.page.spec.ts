@@ -6,6 +6,7 @@ import type { Recommendation, RecommendationPage } from '../../core/api/contract
 import { DiscoveryApi } from '../../core/api/discovery.api';
 import { MatchApi } from '../../core/api/match.api';
 import { MediaApi } from '../../core/api/media.api';
+import { MessagingApi } from '../../core/api/messaging.api';
 import { DiscoverPage } from './discover.page';
 
 const candidate: Recommendation = {
@@ -116,7 +117,8 @@ function createPage(api: object, matchApi: object): DiscoverPage {
     providers: [
       { provide: DiscoveryApi, useValue: api },
       { provide: MatchApi, useValue: matchApi },
-      { provide: MediaApi, useValue: { batch: vi.fn(() => of({})) } },
+      { provide: MediaApi, useValue: { batch: vi.fn(() => of({})), mine: vi.fn(() => of([])) } },
+      { provide: MessagingApi, useValue: { conversations: vi.fn(() => of([])) } },
       { provide: Router, useValue: { navigate: vi.fn(async () => true) } }
     ]
   });

@@ -14,7 +14,7 @@ import { IconComponent } from '../ui/icon/icon.component';
       type="button"
       class="w-full flex items-start gap-3 rounded-xl border border-border bg-card p-4 shadow-sm hover:bg-muted/50 transition text-left"
       [ngClass]="{ 'ring-1 ring-primary/30': !isRead() }"
-      (click)="markAsRead()"
+      (click)="openNotification()"
     >
       <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-muted flex-none">
         @if (type() === 'MATCH' || type() === 'LIKE') {
@@ -36,12 +36,16 @@ import { IconComponent } from '../ui/icon/icon.component';
             <span class="text-xs text-muted-foreground flex-none">{{ time() }}</span>
           </div>
           <p class="text-sm text-muted-foreground mt-1">{{ notification()!.body }}</p>
-          @if (!isRead()) {
-            <div class="mt-2 flex items-center gap-2">
-              <span class="inline-block w-2 h-2 rounded-full bg-primary"></span>
-              <span class="text-xs font-medium text-primary">Não lida</span>
-            </div>
-          }
+          <div class="mt-2 flex items-center justify-between gap-2">
+            @if (!isRead()) {
+              <span class="inline-flex items-center gap-2 text-xs font-medium text-primary">
+                <span class="inline-block w-2 h-2 rounded-full bg-primary"></span>Não lida
+              </span>
+            } @else { <span></span> }
+            @if (type() === 'MATCH' || type() === 'MESSAGE') {
+              <span class="inline-flex items-center gap-1 text-xs font-semibold text-primary">Abrir <hm-icon name="arrow-right" size="13" /></span>
+            }
+          </div>
         }
       </div>
     </button>
@@ -52,19 +56,27 @@ export class NotificationItemComponent {
   private readonly api = inject(NotificationApi);
   readonly notification = input<NotificationView | null>(null);
   readonly markedRead = output<void>();
+  readonly opened = output<NotificationView>();
 
   readonly type = computed(() => this.notification()?.type?.toUpperCase() || '');
   readonly isRead = computed(() => !!this.notification()?.readAt);
   readonly time = computed(() => {
-    const d = this.notification()?.createdAt;
-    if (!d) return '';
-    const date = new Date(d);
-    return date.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' · ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const value = this.notification()?.createdAt;
+    if (!value) return '';
+    const date = new Date(value);
+    return date.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' · ' +
+      date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   });
 
-  async markAsRead(): Promise<void> {
-    const n = this.notification();
-    if (!n || n.readAt) return;
-    try { await firstValueFrom(this.api.markRead(n.id)); this.markedRead.emit(); } catch {}
+  async openNotification(): Promise<void> {
+    const notification = this.notification();
+    if (!notification) return;
+    if (!notification.readAt) {
+      try {
+        await firstValueFrom(this.api.markRead(notification.id));
+        this.markedRead.emit();
+      } catch {}
+    }
+    this.opened.emit(notification);
   }
 }
