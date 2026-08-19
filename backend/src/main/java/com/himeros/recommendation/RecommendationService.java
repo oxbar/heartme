@@ -36,12 +36,21 @@ public class RecommendationService {
     }
 
     private boolean eligible(ProfileQuery.ProfileView me, ProfileQuery.ProfileView p) {
+        if (!p.discoverable()) return false;
         int age = Period.between(p.birthDate(), LocalDate.now()).getYears();
-        if (age < me.minAge() || age > me.maxAge()) return false;
+        if (me.strictAge() && (age < me.minAge() || age > me.maxAge())) return false;
+        if (p.strictAge()) {
+            int myAge = Period.between(me.birthDate(), LocalDate.now()).getYears();
+            if (myAge < p.minAge() || myAge > p.maxAge()) return false;
+        }
         if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(p.gender())) return false;
         if (!p.lookingFor().isEmpty() && !p.lookingFor().contains(me.gender())) return false;
+        if (!me.preferredBodyTypes().isEmpty() && p.bodyType() != null && !me.preferredBodyTypes().contains(p.bodyType())) return false;
+        if (!p.preferredBodyTypes().isEmpty() && me.bodyType() != null && !p.preferredBodyTypes().contains(me.bodyType())) return false;
         Double distance = distance(me, p);
-        return distance == null || distance <= me.maxDistanceKm();
+        if (me.strictDistance() && distance != null && distance > me.maxDistanceKm()) return false;
+        if (p.strictDistance() && distance != null && distance > p.maxDistanceKm()) return false;
+        return true;
     }
 
     private double score(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
