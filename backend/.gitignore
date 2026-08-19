@@ -6,3 +6,9 @@ target/
 data/media/
 logs/
 .DS_Store
+
+# Maven Wrapper extracted distribution (downloaded by ./mvnw on first run)
+.mvn/apache-maven-*/
+
+# Windows batch scripts
+*.cmd

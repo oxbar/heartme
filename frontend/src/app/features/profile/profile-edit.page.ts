@@ -414,6 +414,7 @@ export class ProfileEditPage implements OnInit, OnDestroy {
   private readonly profileStore = inject(ProfileStore);
 
   readonly loading = signal(true);
+  readonly hydrating = signal(true);
   readonly error = signal('');
   readonly uploading = signal(false);
   readonly photos = signal<PhotoView[]>([]);
@@ -483,7 +484,7 @@ export class ProfileEditPage implements OnInit, OnDestroy {
     effect(() => {
       const fingerprint = this.currentFingerprint();
       const loading = this.loading();
-      if (loading || !this.lastSavedFingerprint) return;
+      if (loading || this.hydrating() || !this.lastSavedFingerprint) return;
       if (fingerprint !== this.lastSavedFingerprint) this.scheduleAutosave();
     });
   }
@@ -520,10 +521,12 @@ export class ProfileEditPage implements OnInit, OnDestroy {
       this.preferredBodySet.set(new Set((profile.preferredBodyTypes || []) as BodyType[]));
       this.interestTags.set([...(profile.interests || [])]);
       this.photos.set(photos);
-      this.lastSavedFingerprint = this.currentFingerprint();
       if (profile.state) await this.loadCities(profile.state);
+      this.lastSavedFingerprint = this.currentFingerprint();
+      this.hydrating.set(false);
     } catch {
       this.error.set('Não foi possível carregar seu perfil.');
+      this.hydrating.set(false);
     } finally {
       this.loading.set(false);
     }
@@ -694,7 +697,7 @@ export class ProfileEditPage implements OnInit, OnDestroy {
   }
 
   private async persistProfile(showToast: boolean): Promise<void> {
-    if (this.saveInFlight || this.loading()) return;
+    if (this.saveInFlight || this.loading() || this.hydrating()) return;
     if (this.editForm().invalid() || this.lookingForSet().size === 0 || !this.locationSelectionValid()) return;
     const fingerprint = this.currentFingerprint();
     if (fingerprint === this.lastSavedFingerprint) return;

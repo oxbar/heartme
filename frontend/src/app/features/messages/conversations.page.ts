@@ -29,11 +29,11 @@ import { IconComponent } from '../../ui/icon/icon.component';
             <p class="mt-1 text-xs text-white/50">Converse com seus matches.</p>
           </div>
           <button type="button" class="hm-mobile-icon-button" aria-label="Atualizar conversas" (click)="load()">
-            <hm-icon name="refresh-ccw" size="18" [class]="loading() ? 'animate-spin' : ''" />
+            <hm-icon name="refresh-ccw" size="18" [class]="enriching() ? 'animate-spin' : ''" />
           </button>
         </header>
 
-        @if (loading()) {
+        @if (showSkeleton()) {
           <div class="space-y-2">
             @for (_ of [0,1,2,3,4,5]; track _) {
               <div class="h-[76px] animate-pulse rounded-xl bg-white/5"></div>
@@ -87,14 +87,29 @@ export class ConversationsPage implements OnInit {
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
 
-  readonly loading = signal(true);
+  readonly enriching = signal(true);
   readonly error = signal('');
   readonly conversations = this.social.conversations;
+  readonly socialLoading = this.social.loading;
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
 
+  readonly showSkeleton = signal<boolean>(true);
+
+  private updateSkeletonState(): void {
+    const hasAnyData = this.conversations().length > 0 || this.social.matches().length > 0;
+    const storeLoading = this.socialLoading();
+    const enrichmentLoading = this.enriching();
+    this.showSkeleton.set(storeLoading && enrichmentLoading && !hasAnyData);
+  }
+
   async ngOnInit(): Promise<void> {
+    this.updateSkeletonState();
+    const convosInit = this.conversations();
+    if (convosInit.length > 0) {
+      void this.enrich(convosInit);
+    }
     await this.load();
   }
 
@@ -115,11 +130,21 @@ export class ConversationsPage implements OnInit {
   }
 
   async load(): Promise<void> {
-    this.loading.set(true);
     this.error.set('');
     try {
       await this.social.refresh({ preserveKnown: true, retryEmpty: true });
+      this.updateSkeletonState();
       const list = this.conversations();
+      await this.enrich(list);
+    } catch {
+      this.error.set('Tente novamente em alguns instantes.');
+    }
+  }
+
+  private async enrich(list: ConversationView[]): Promise<void> {
+    this.enriching.set(true);
+    this.updateSkeletonState();
+    try {
       const ids = Array.from(new Set(list.map(item => this.otherUser(item)).filter(Boolean)));
 
       const pairs = await Promise.all(ids.map(async id => {
@@ -150,10 +175,9 @@ export class ConversationsPage implements OnInit {
         this.photos.set({});
         this.presences.set({});
       }
-    } catch {
-      this.error.set('Tente novamente em alguns instantes.');
     } finally {
-      this.loading.set(false);
+      this.enriching.set(false);
+      this.updateSkeletonState();
     }
   }
 }

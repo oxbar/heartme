@@ -125,6 +125,50 @@ describe('SocialStateStore', () => {
 
     expect(store.matches()).toEqual([]);
   });
+
+  it('keeps the match visible across Matches → Messages → Matches route re-entry refreshes', async () => {
+    const listCalls: MatchView[][] = [[match], [], [match], [], [match]];
+    const matchApi = { list: vi.fn(() => of(listCalls.shift() ?? [])) };
+    const conversationsCalls: ConversationView[][] = [[conversation], [conversation], [conversation], [conversation], [conversation]];
+    const messagingApi = { conversations: vi.fn(() => of(conversationsCalls.shift() ?? [])) };
+    const store = createStore(matchApi, messagingApi);
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+    expect(store.matches().length).toBe(1);
+    expect(store.matches()[0].id).toBe('match-1');
+    expect(store.matches()[0].status).toBe('ACTIVE');
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+    expect(store.matches().length).toBe(1);
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+    expect(store.matches().length).toBe(1);
+    expect(store.matches()[0].status).toBe('ACTIVE');
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+    expect(store.matches().length).toBe(1);
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+    expect(store.matches().length).toBe(1);
+    expect(store.conversations().length).toBe(1);
+  });
+
+  it('exposes an error signal without wiping known-good data on transient HTTP failures', async () => {
+    const failingOnce = vi.fn()
+      .mockReturnValueOnce(of([match]))
+      .mockImplementationOnce(() => { throw new Error('transient network'); })
+      .mockReturnValueOnce(of([]));
+    const messagingApi = { conversations: vi.fn(() => of([conversation])) };
+    const store = createStore({ list: failingOnce }, messagingApi);
+
+    await store.refresh({ preserveKnown: true });
+    expect(store.matches()).toEqual([match]);
+    expect(store.error()).toBeNull();
+
+    await store.refresh({ preserveKnown: true });
+    expect(store.matches()).toEqual([match]);
+    expect(store.error()).not.toBeNull();
+  });
 });
 
 function createStore(matchApi: object, messagingApi: object, currentUser = signal<string | null>('user-a')): SocialStateStore {

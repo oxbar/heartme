@@ -9,3 +9,9 @@ frontend/dist/
 frontend/.angular/
 .env
 .trae/skills/angular-developer/
+
+# Maven Wrapper (downloaded distribution extracted by ./mvnw)
+backend/.mvn/apache-maven-*/
+
+# Windows batch scripts
+*.cmd

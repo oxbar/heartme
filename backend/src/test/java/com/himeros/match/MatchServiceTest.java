@@ -77,6 +77,46 @@ class MatchServiceTest {
         verify(f.repo).findForUserByStatus(f.a, Match.Status.ACTIVE);
     }
 
+    @Test
+    void shouldReturnActiveMatchOnRepeatedQueries() {
+        Fixture f = new Fixture();
+        Match active = new Match(f.a, f.b);
+        when(f.repo.findForUserByStatus(f.a, Match.Status.ACTIVE)).thenReturn(List.of(active));
+
+        List<MatchService.MatchView> first = f.service.list(f.a);
+        List<MatchService.MatchView> second = f.service.list(f.a);
+        List<MatchService.MatchView> third = f.service.list(f.a);
+
+        assertEquals(1, first.size());
+        assertEquals(1, second.size());
+        assertEquals(1, third.size());
+        assertEquals("ACTIVE", first.getFirst().status());
+        assertEquals("ACTIVE", second.getFirst().status());
+        assertEquals("ACTIVE", third.getFirst().status());
+        verify(f.repo, times(3)).findForUserByStatus(f.a, Match.Status.ACTIVE);
+    }
+
+    @Test
+    void shouldKeepActiveMatchWhenLoadingConversationsSideEffects() {
+        Fixture f = new Fixture();
+        Match active = new Match(f.a, f.b);
+        when(f.repo.findForUserByStatus(f.a, Match.Status.ACTIVE)).thenReturn(List.of(active));
+
+        List<MatchService.MatchView> beforeConversations = f.service.list(f.a);
+        assertEquals(1, beforeConversations.size());
+        assertEquals("ACTIVE", beforeConversations.getFirst().status());
+
+        verify(f.repo, never()).save(any());
+        verify(f.repo, never()).reactivatePair(any(), any(), any());
+        verify(f.repo, never()).insertActiveIfAbsent(any(), any(), any(), any());
+
+        List<MatchService.MatchView> afterConversations = f.service.list(f.a);
+        assertEquals(1, afterConversations.size());
+        assertEquals("ACTIVE", afterConversations.getFirst().status());
+
+        verify(f.events, never()).publishEvent(any());
+    }
+
     private static final class Fixture {
         final MatchRepository repo = mock(MatchRepository.class);
         final OutboxService outbox = mock(OutboxService.class);

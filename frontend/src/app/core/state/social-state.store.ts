@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { ConversationView, MatchView } from '../api/contracts';
 import { MatchApi } from '../api/match.api';
@@ -6,16 +6,7 @@ import { MessagingApi } from '../api/messaging.api';
 import { SessionStore } from '../auth/session.store';
 
 export interface SocialRefreshOptions {
-  /**
-   * Keep the last known-good state when a navigation refresh returns an empty
-   * snapshot. Explicit domain actions such as unmatch mutate the store directly.
-   */
   preserveKnown?: boolean;
-  /**
-   * Retry an all-empty snapshot briefly. This covers the small AFTER_COMMIT
-   * window between reciprocal LIKE persistence, match activation and route
-   * navigation without forcing the user through Discovery again.
-   */
   retryEmpty?: boolean;
 }
 
@@ -29,42 +20,57 @@ export class SocialStateStore {
   private readonly matchApi = inject(MatchApi);
   private readonly messagingApi = inject(MessagingApi);
   private readonly session = inject(SessionStore);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly matches = signal<MatchView[]>([]);
   readonly conversations = signal<ConversationView[]>([]);
   readonly loading = signal(false);
   readonly loaded = signal(false);
+  readonly error = signal<unknown | null>(null);
 
   private inFlight: { owner: string | null; promise: Promise<void> } | null = null;
   private ownerUserId: string | null = null;
+  private destroyed = false;
+
+  constructor() {
+    this.ownerUserId = this.session.userId();
+    this.restorePersisted(this.ownerUserId);
+
+    effect(() => {
+      const nextUserId = this.session.userId();
+      if (this.ownerUserId !== nextUserId) {
+        this.ownerUserId = nextUserId;
+        this.resetForOwnerChange();
+        this.restorePersisted(nextUserId);
+      }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
+  }
 
   ensureLoaded(): Promise<void> {
-    this.syncOwner();
     return this.loaded() ? Promise.resolve() : this.refresh({ preserveKnown: true, retryEmpty: true });
   }
 
   refresh(options: SocialRefreshOptions = { preserveKnown: true }): Promise<void> {
-    this.syncOwner();
     const owner = this.ownerUserId;
     if (this.inFlight?.owner === owner) return this.inFlight.promise;
 
-    const request = this.performRefresh(options, owner).finally(() => {
+    let request!: Promise<void>;
+    request = this.performRefresh(options, owner, () => {
       if (this.inFlight?.promise === request) this.inFlight = null;
     });
     this.inFlight = { owner, promise: request };
     return request;
   }
 
-  /**
-   * Put a match returned by a direct API check into the session store
-   * immediately. Discovery calls this before routing to Matches/Messages so a
-   * newly-created match cannot disappear while a background refresh catches up.
-   */
   rememberMatch(match: MatchView): void {
-    this.syncOwner();
     if (match.status !== 'ACTIVE') return;
     this.matches.update(list => dedupeMatches([match, ...list]));
     this.loaded.set(true);
+    this.error.set(null);
     this.persist();
   }
 
@@ -72,56 +78,73 @@ export class SocialStateStore {
     this.matches.update(list => list.filter(match => match.id !== matchId));
     this.conversations.update(list => list.filter(conversation => conversation.matchId !== matchId));
     this.loaded.set(true);
+    this.error.set(null);
     this.persist();
   }
 
-  clear(): void {
+  private resetForOwnerChange(): void {
     this.matches.set([]);
     this.conversations.set([]);
     this.loaded.set(false);
     this.loading.set(false);
+    this.error.set(null);
     this.inFlight = null;
   }
 
-  private syncOwner(): void {
-    const current = this.session.userId();
-    if (this.ownerUserId === current) return;
-    this.ownerUserId = current;
-    this.clear();
-    this.restorePersisted(current);
-  }
-
-  private async performRefresh(options: SocialRefreshOptions, owner: string | null): Promise<void> {
+  private async performRefresh(
+    options: SocialRefreshOptions,
+    owner: string | null,
+    onFinally: () => void
+  ): Promise<void> {
+    let finalized = false;
+    const complete = () => {
+      if (!finalized) {
+        finalized = true;
+        onFinally();
+      }
+    };
+    if (owner !== this.ownerUserId || this.destroyed) {
+      complete();
+      return;
+    }
     this.loading.set(true);
+    this.error.set(null);
     try {
       const attempts = options.retryEmpty ? 4 : 1;
       let finalMatches: MatchView[] | null = null;
       let finalConversations: ConversationView[] | null = null;
       let anySuccess = false;
+      let lastError: unknown = null;
 
       for (let attempt = 0; attempt < attempts; attempt++) {
         const [matchesResult, conversationsResult] = await Promise.all([
           firstValueFrom(this.matchApi.list()).then(
-            value => ({ ok: true as const, value }),
-            () => ({ ok: false as const, value: [] as MatchView[] })
+            value => ({ ok: true as const, value, error: null as unknown }),
+            err => ({ ok: false as const, value: [] as MatchView[], error: err })
           ),
           firstValueFrom(this.messagingApi.conversations()).then(
-            value => ({ ok: true as const, value }),
-            () => ({ ok: false as const, value: [] as ConversationView[] })
+            value => ({ ok: true as const, value, error: null as unknown }),
+            err => ({ ok: false as const, value: [] as ConversationView[], error: err })
           )
         ]);
 
-        // A response started for the previous authenticated account must never
-        // populate the state of the next account in the same browser tab.
-        if (owner !== this.ownerUserId || owner !== this.session.userId()) return;
+        if (owner !== this.ownerUserId || owner !== this.session.userId() || this.destroyed) {
+          complete();
+          return;
+        }
 
         anySuccess ||= matchesResult.ok || conversationsResult.ok;
-        if (matchesResult.ok) finalMatches = dedupeMatches(matchesResult.value);
-        if (conversationsResult.ok) finalConversations = sortConversations(conversationsResult.value);
+        if (!anySuccess && attempt === attempts - 1) {
+          lastError = matchesResult.error ?? conversationsResult.error;
+        }
 
-        // Conversations are only returned by the backend while their match is
-        // ACTIVE. They are therefore a safe recovery source when /matches is
-        // briefly empty during tab navigation or immediately after a match.
+        if (matchesResult.ok) {
+          finalMatches = dedupeMatches(matchesResult.value);
+        }
+        if (conversationsResult.ok) {
+          finalConversations = sortConversations(conversationsResult.value);
+        }
+
         if (finalConversations?.length) {
           const recovered = matchesFromConversations(finalConversations);
           finalMatches = dedupeMatches([...(finalMatches ?? []), ...recovered]);
@@ -134,24 +157,42 @@ export class SocialStateStore {
 
       if (finalMatches !== null) {
         const next = finalMatches;
-        if (!options.preserveKnown || next.length || !this.loaded() || !this.matches().length) {
+        if (!options.preserveKnown) {
+          this.matches.set(next);
+        } else if (next.length > 0) {
+          this.matches.set(next);
+        } else if (!this.loaded()) {
           this.matches.set(next);
         }
       }
 
       if (finalConversations !== null) {
         const next = finalConversations;
-        if (!options.preserveKnown || next.length || !this.loaded() || !this.conversations().length) {
+        if (!options.preserveKnown) {
+          this.conversations.set(next);
+        } else if (next.length > 0) {
+          this.conversations.set(next);
+        } else if (!this.loaded()) {
           this.conversations.set(next);
         }
       }
 
       if (anySuccess) {
         this.loaded.set(true);
+        this.error.set(null);
         this.persist();
+      } else if (lastError && !this.loaded()) {
+        this.error.set(lastError);
+      }
+    } catch (err) {
+      if (owner === this.ownerUserId && !this.loaded()) {
+        this.error.set(err);
       }
     } finally {
-      if (owner === this.ownerUserId) this.loading.set(false);
+      complete();
+      if (owner === this.ownerUserId) {
+        this.loading.set(false);
+      }
     }
   }
 
@@ -167,7 +208,7 @@ export class SocialStateStore {
     try {
       storage.setItem(storageKey(owner), JSON.stringify(snapshot));
     } catch {
-      // Storage is an enhancement only; quota/privacy mode must not break UX.
+      // noop
     }
   }
 
@@ -185,6 +226,7 @@ export class SocialStateStore {
         this.matches.set(dedupeMatches([...matches, ...matchesFromConversations(conversations)]));
         this.conversations.set(conversations);
         this.loaded.set(true);
+        this.error.set(null);
       }
     } catch {
       try { storage.removeItem(storageKey(owner)); } catch { /* noop */ }
