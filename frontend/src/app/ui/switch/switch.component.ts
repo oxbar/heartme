@@ -1,13 +1,10 @@
-// standalone:true, imports:[CommonModule, FormsModule]
 import {
   ChangeDetectionStrategy,
   Component,
-  HostBinding,
   booleanAttribute,
   computed,
   input,
   output,
-  signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
@@ -22,21 +19,17 @@ import { cn } from '../../../lib/utils';
       type="button"
       role="switch"
       [class]="buttonClass()"
-      [attr.aria-checked]="checked()"
+      [attr.aria-checked]="isOn()"
       [attr.disabled]="disabled() ? '' : null"
-      (click)="toggle()"
+      (click)="toggle($event)"
     >
       <span [class]="thumbClass()"></span>
     </button>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [
-    {
-      provide: NG_VALUE_ACCESSOR,
-      useExisting: SwitchComponent,
-      multi: true,
-    },
-  ],
+    { provide: NG_VALUE_ACCESSOR, useExisting: SwitchComponent, multi: true }
+  ]
 })
 export class SwitchComponent implements ControlValueAccessor {
   readonly checked = input(false, { transform: booleanAttribute });
@@ -44,14 +37,15 @@ export class SwitchComponent implements ControlValueAccessor {
   readonly class = input<string>('');
   readonly checkedChange = output<boolean>();
 
-  private _checked = false;
   private onChange: (value: boolean) => void = () => {};
   private onTouched: () => void = () => {};
+
+  readonly isOn = computed(() => !!this.checked());
 
   readonly buttonClass = computed(() =>
     cn(
       'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50',
-      (this._checked || this.checked()) ? 'bg-primary' : 'bg-input',
+      this.isOn() ? 'bg-primary' : 'bg-input',
       this.class()
     )
   );
@@ -59,20 +53,21 @@ export class SwitchComponent implements ControlValueAccessor {
   readonly thumbClass = computed(() =>
     cn(
       'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform',
-      (this._checked || this.checked()) ? 'translate-x-5' : 'translate-x-0'
+      this.isOn() ? 'translate-x-5' : 'translate-x-0'
     )
   );
 
-  toggle() {
+  toggle(_e: MouseEvent) {
     if (this.disabled()) return;
-    this._checked = !this._checked;
-    this.onChange(this._checked);
+    const next = !this.isOn();
+    this.onChange(next);
     this.onTouched();
-    this.checkedChange.emit(this._checked);
+    this.checkedChange.emit(next);
   }
 
   writeValue(value: boolean): void {
-    this._checked = !!value;
+    if ((value as any) === this.checked()) return;
+    this.checkedChange.emit(!!value);
   }
 
   registerOnChange(fn: (value: boolean) => void): void {
