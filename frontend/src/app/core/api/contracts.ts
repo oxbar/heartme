@@ -1,6 +1,11 @@
 export type Gender = 'MAN' | 'WOMAN' | 'NON_BINARY' | 'OTHER';
 export type BodyType = 'SLIM' | 'ATHLETIC' | 'AVERAGE' | 'MUSCULAR' | 'CURVY' | 'PLUS_SIZE';
 export type InteractionType = 'LIKE' | 'PASS' | 'SUPER_LIKE';
+
+export interface InteractionResult {
+  type: InteractionType;
+  mutualLike: boolean;
+}
 export type SubscriptionPlan = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
 export interface UserView {

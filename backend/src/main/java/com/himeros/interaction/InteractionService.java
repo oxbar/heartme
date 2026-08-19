@@ -34,22 +34,27 @@ public class InteractionService implements InteractionQuery {
             throw new IllegalArgumentException("Cannot interact with yourself");
         if (!identity.exists(target))
             throw new ResourceNotFoundException("Target user not found");
-        Interaction.Type type = Interaction.Type.valueOf(rawType.toUpperCase());
+
+        Interaction.Type type = Interaction.Type.valueOf(rawType.toUpperCase(Locale.ROOT));
         if (type == Interaction.Type.VIEW)
             throw new IllegalArgumentException("Use discovery view endpoint");
 
         repo.save(new Interaction(actor, target, type));
-        boolean mutual = false;
-        if (type == Interaction.Type.LIKE || type == Interaction.Type.SUPER_LIKE) {
-            mutual = repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(target, actor)
-                    .map(other -> other.type() == Interaction.Type.LIKE || other.type() == Interaction.Type.SUPER_LIKE)
-                    .orElse(false);
-            if (mutual)
-                events.publishEvent(new MutualLikeDetected(actor, target));
+
+        boolean positive = isPositive(type);
+        boolean mutual = positive && latestDecisionIsPositive(target, actor);
+
+        // IMPORTANT: publish for every positive decision. The match module listens
+        // AFTER_COMMIT and re-reads both directions from committed state. This closes
+        // the race where two browser sessions LIKE each other at nearly the same time.
+        if (positive) {
+            events.publishEvent(new PositiveInteractionRecorded(actor, target, type.name()));
         }
+
         outbox.append("Interaction", actor + ":" + target, "himeros.interaction.created.v1",
                 "himeros.interaction.events.v1", actor,
                 Map.of("actorId", actor, "targetId", target, "type", type.name(), "mutual", mutual));
+
         return new Result(type.name(), mutual);
     }
 
@@ -104,6 +109,17 @@ public class InteractionService implements InteractionQuery {
         for (Interaction interaction : repo.latestForTargets(actor, targets))
             result.put(interaction.targetId(), view(interaction));
         return Map.copyOf(result);
+    }
+
+    private boolean latestDecisionIsPositive(UUID actor, UUID target) {
+        return repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target)
+                .map(Interaction::type)
+                .map(InteractionService::isPositive)
+                .orElse(false);
+    }
+
+    private static boolean isPositive(Interaction.Type type) {
+        return type == Interaction.Type.LIKE || type == Interaction.Type.SUPER_LIKE;
     }
 
     private static InteractionView view(Interaction i) {

@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { InteractionType, Recommendation, RecommendationExplanation, RecommendationPage } from './contracts';
+import { InteractionResult, InteractionType, Recommendation, RecommendationExplanation, RecommendationPage } from './contracts';
 
 @Injectable({ providedIn: 'root' })
 export class DiscoveryApi {
@@ -25,7 +25,7 @@ export class DiscoveryApi {
     return this.http.get<RecommendationExplanation>(`/api/v1/discovery/explain/${userId}`);
   }
 
-  interact(userId: string, type: InteractionType): Observable<unknown> {
-    return this.http.post(`/api/v1/interactions/${userId}`, { type });
+  interact(userId: string, type: InteractionType): Observable<InteractionResult> {
+    return this.http.post<InteractionResult>(`/api/v1/interactions/${userId}`, { type });
   }
 }

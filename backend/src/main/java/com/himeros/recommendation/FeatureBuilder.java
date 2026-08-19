@@ -78,7 +78,9 @@ public class FeatureBuilder {
 
     private static double noveltyScore(ProfileQuery.ProfileView candidate, InteractionQuery.InteractionView previous, Instant now, int newProfileDays) {
         double createdBoost = isNew(candidate, now, newProfileDays) ? 1.0 : 0.75;
-        if (previous == null) return createdBoost;
+        // A VIEW is generated for analytics and must not penalize the candidate's novelty.
+        // Only an explicit decision (PASS/LIKE/SUPER_LIKE) may affect rediscovery ranking.
+        if (previous == null || "VIEW".equalsIgnoreCase(previous.type())) return createdBoost;
         long days = Math.max(0, Duration.between(previous.createdAt(), now).toDays());
         return clamp(Math.max(0.15, days / 60.0));
     }

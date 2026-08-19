@@ -34,6 +34,24 @@ class RecommendationServiceTest {
         assertEquals(manId, f.service.discover(womanId, 20).getFirst().profile().userId());
     }
 
+
+    @Test
+    void merelyViewingCandidateDoesNotConsumeItFromDiscovery() {
+        Fixture f = new Fixture();
+        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
+        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true);
+        var candidate = p(candidateId, "Candidate", Gender.WOMAN, Set.of(Gender.MAN), null, true);
+
+        f.stub(meId, me, List.of(candidate), List.of(
+            new InteractionQuery.InteractionView(candidateId, "VIEW", NOW.minus(Duration.ofMinutes(1)))
+        ));
+
+        var result = f.service.discover(meId, 20);
+        assertEquals(1, result.size());
+        assertEquals(candidateId, result.getFirst().profile().userId());
+        assertTrue(f.service.explain(meId, candidateId).eligible());
+    }
+
     @Test
     void passUsesCooldownInsteadOfPermanentSeenExclusion() {
         Fixture f = new Fixture();

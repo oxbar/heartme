@@ -16,6 +16,9 @@ public class CooldownPolicy {
     }
 
     public Optional<Instant> cooldownUntil(InteractionQuery.InteractionView interaction) {
+        // VIEW is an analytics/learning signal, not a user decision. Merely rendering a card
+        // must never consume it from Discovery when the user navigates away and comes back.
+        if ("VIEW".equalsIgnoreCase(interaction.type())) return Optional.empty();
         Duration duration = properties.forType(interaction.type());
         if (duration.isZero() || duration.isNegative()) return Optional.empty();
         return Optional.of(interaction.createdAt().plus(duration));

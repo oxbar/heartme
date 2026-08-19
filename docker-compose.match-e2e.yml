@@ -1,0 +1,65 @@
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+    environment:
+      POSTGRES_DB: himeros
+      POSTGRES_USER: himeros
+      POSTGRES_PASSWORD: himeros_e2e
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U himeros -d himeros"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:29093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  backend:
+    build: ./backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/himeros
+      SPRING_DATASOURCE_USERNAME: himeros
+      SPRING_DATASOURCE_PASSWORD: himeros_e2e
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      HIMEROS_SECURITY_JWT_SECRET: match-e2e-only-secret-change-me-1234567890
+      HIMEROS_SECURITY_COOKIE_SECURE: "false"
+      HIMEROS_CORS_ALLOWED_ORIGINS: http://localhost:14200
+      HIMEROS_MEDIA_DIRECTORY: /tmp/himeros-e2e-media
+      HIMEROS_MEDIA_PUBLIC_BASE_URL: http://localhost:14200/media
+      HIMEROS_DISCOVERY_CACHE_TTL: 1s
+      HIMEROS_DISCOVERY_EXPLAIN_ENABLED: "true"
+    ports:
+      - "18080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "14200:80"
+    depends_on:
+      - backend

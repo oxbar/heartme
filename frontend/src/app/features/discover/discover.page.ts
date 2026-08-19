@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, HostListener, ViewChild, computed, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { PhotoView, Recommendation } from '../../core/api/contracts';
+import type { InteractionType, PhotoView, Recommendation } from '../../core/api/contracts';
 import { DiscoveryApi } from '../../core/api/discovery.api';
 import { MediaApi } from '../../core/api/media.api';
+import { MatchApi } from '../../core/api/match.api';
 import { ProfileCardComponent } from '../../shared/profile-card.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 
@@ -86,12 +87,35 @@ import { IconComponent } from '../../ui/icon/icon.component';
         </div>
       }
     </section>
+
+    @if (matchCelebration(); as match) {
+      <div class="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="match-title">
+        <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-[#111214] p-7 text-center shadow-2xl">
+          <div class="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-primary">
+            <hm-icon name="heart" size="32" />
+          </div>
+          <p class="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-primary">É recíproco</p>
+          <h2 id="match-title" class="text-3xl font-extrabold text-white">Deu match!</h2>
+          <p class="mt-2 text-sm leading-relaxed text-white/65">Você e {{ match.displayName }} curtiram um ao outro.</p>
+          <div class="mt-6 grid gap-3">
+            <button type="button" class="hm-dark-button is-primary justify-center" (click)="openMatches()">
+              <hm-icon name="message-circle" size="17" />
+              Conversar agora
+            </button>
+            <button type="button" class="hm-dark-button justify-center" (click)="dismissMatch()">
+              Continuar descobrindo
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DiscoverPage implements OnInit {
   private readonly api = inject(DiscoveryApi);
   private readonly mediaApi = inject(MediaApi);
+  private readonly matchApi = inject(MatchApi);
   private readonly router = inject(Router);
 
   @ViewChild(ProfileCardComponent) profileCard?: ProfileCardComponent;
@@ -102,7 +126,7 @@ export class DiscoverPage implements OnInit {
   readonly photosByUser = signal<Record<string, PhotoView[]>>({});
   readonly actionPending = signal(false);
   readonly nextCursor = signal<string | null>(null);
-  private readonly viewedThisSession = new Set<string>();
+  readonly matchCelebration = signal<{ userId: string; displayName: string } | null>(null);
 
   readonly activeRecommendation = computed(() => this.recommendations()[0] ?? null);
   readonly nextRecommendation = computed(() => this.recommendations()[1] ?? null);
@@ -158,7 +182,6 @@ export class DiscoverPage implements OnInit {
       } else {
         this.photosByUser.set({});
       }
-      void this.markActiveViewed();
     } catch {
       this.error.set('Verifique sua conexão e tente novamente.');
     } finally {
@@ -186,13 +209,6 @@ export class DiscoverPage implements OnInit {
   }
 
 
-  private async markActiveViewed(): Promise<void> {
-    const userId = this.activeRecommendation()?.profile.userId;
-    if (!userId || this.viewedThisSession.has(userId)) return;
-    this.viewedThisSession.add(userId);
-    await firstValueFrom(this.api.markViewed(userId)).catch(() => undefined);
-  }
-
   private async loadMore(): Promise<void> {
     const cursor = this.nextCursor();
     if (!cursor) return;
@@ -208,13 +224,28 @@ export class DiscoverPage implements OnInit {
     this.photosByUser.update(current => ({ ...current, ...photos }));
   }
 
-  async onInteract(userId: string, type: 'LIKE' | 'PASS' | 'SUPER_LIKE'): Promise<void> {
+  async onInteract(userId: string, type: InteractionType): Promise<void> {
     if (this.actionPending()) return;
     this.actionPending.set(true);
+    this.error.set('');
+    const candidate = this.recommendations().find(item => item.profile.userId === userId)?.profile ?? null;
+
     try {
-      await firstValueFrom(this.api.interact(userId, type));
+      const result = await firstValueFrom(this.api.interact(userId, type));
+      let matched = false;
+      if (type === 'LIKE' || type === 'SUPER_LIKE') {
+        matched = result.mutualLike || await this.waitForActiveMatch(userId);
+      }
+
       this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
-      void this.markActiveViewed();
+
+      if (matched) {
+        this.matchCelebration.set({
+          userId,
+          displayName: candidate?.displayName || 'essa pessoa'
+        });
+      }
+
       if (this.recommendations().length <= 5 && this.nextCursor()) {
         await this.loadMore();
       }
@@ -223,5 +254,29 @@ export class DiscoverPage implements OnInit {
     } finally {
       this.actionPending.set(false);
     }
+  }
+
+  dismissMatch(): void {
+    this.matchCelebration.set(null);
+  }
+
+  async openMatches(): Promise<void> {
+    this.matchCelebration.set(null);
+    await this.router.navigate(['/app/matches']);
+  }
+
+  private async waitForActiveMatch(targetUserId: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const matches = await firstValueFrom(this.matchApi.list()).catch(() => []);
+      if (matches.some(match =>
+        match.status === 'ACTIVE' && (match.userA === targetUserId || match.userB === targetUserId)
+      )) {
+        return true;
+      }
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 80 * (attempt + 1)));
+      }
+    }
+    return false;
   }
 }
