@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationView, MatchView } from '../api/contracts';
 import { MatchApi } from '../api/match.api';
 import { MessagingApi } from '../api/messaging.api';
@@ -26,6 +26,10 @@ const conversation: ConversationView = {
 };
 
 describe('SocialStateStore', () => {
+  beforeEach(() => {
+    try { window.sessionStorage.clear(); } catch { /* noop */ }
+  });
+
   it('preserves the last known-good match when a tab refresh temporarily returns empty', async () => {
     const matchApi = { list: vi.fn().mockReturnValueOnce(of([match])).mockReturnValueOnce(of([])) };
     const messagingApi = { conversations: vi.fn(() => of([conversation])) };
@@ -38,6 +42,38 @@ describe('SocialStateStore', () => {
     expect(store.matches()).toEqual([match]);
   });
 
+  it('recovers an ACTIVE match from an active conversation when /matches is transiently empty', async () => {
+    const store = createStore(
+      { list: vi.fn(() => of([])) },
+      { conversations: vi.fn(() => of([conversation])) }
+    );
+
+    await store.refresh({ preserveKnown: true, retryEmpty: true });
+
+    expect(store.matches()).toEqual([{ ...match, createdAt: conversation.createdAt }]);
+    expect(store.conversations()).toEqual([conversation]);
+  });
+
+  it('restores matches from session storage if the social service is recreated during route navigation', async () => {
+    const first = createStore(
+      { list: vi.fn(() => of([match])) },
+      { conversations: vi.fn(() => of([conversation])) }
+    );
+    await first.refresh({ preserveKnown: true });
+    expect(first.matches()).toEqual([match]);
+
+    // Simulates destruction/recreation caused by shell/router/dev reload. The
+    // second store starts with an empty backend snapshot but must render the
+    // match immediately from the authenticated browser session cache.
+    const second = createStore(
+      { list: vi.fn(() => of([])) },
+      { conversations: vi.fn(() => of([])) }
+    );
+    await second.ensureLoaded();
+
+    expect(second.matches()).toEqual([match]);
+  });
+
   it('shares conversations and matches independently of which route component is alive', async () => {
     const store = createStore(
       { list: vi.fn(() => of([match])) },
@@ -48,6 +84,18 @@ describe('SocialStateStore', () => {
 
     expect(store.matches()).toEqual([match]);
     expect(store.conversations()).toEqual([conversation]);
+    expect(store.loaded()).toBe(true);
+  });
+
+  it('remembers a newly detected match before navigation finishes', () => {
+    const store = createStore(
+      { list: vi.fn(() => of([])) },
+      { conversations: vi.fn(() => of([])) }
+    );
+
+    store.rememberMatch(match);
+
+    expect(store.matches()).toEqual([match]);
     expect(store.loaded()).toBe(true);
   });
 

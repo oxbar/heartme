@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, HostListener, ViewChild, computed, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { InteractionType, PhotoView, Recommendation } from '../../core/api/contracts';
+import type { InteractionType, MatchView, PhotoView, Recommendation } from '../../core/api/contracts';
 import { DiscoveryApi } from '../../core/api/discovery.api';
 import { MediaApi } from '../../core/api/media.api';
 import { MatchApi } from '../../core/api/match.api';
@@ -256,7 +256,9 @@ export class DiscoverPage implements OnInit {
       const result = await firstValueFrom(this.api.interact(userId, type));
       let matched = false;
       if (type === 'LIKE' || type === 'SUPER_LIKE') {
-        matched = result.mutualLike || await this.waitForActiveMatch(userId);
+        const activeMatch = await this.waitForActiveMatch(userId);
+        matched = result.mutualLike || !!activeMatch;
+        if (activeMatch) this.social.rememberMatch(activeMatch);
       }
 
       this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
@@ -265,7 +267,7 @@ export class DiscoverPage implements OnInit {
         // Seed the shared social state before the user navigates away from Discovery.
         // Matches/Messages can then render the same match without depending on a
         // second route-local request winning a race with the backend commit.
-        await this.social.refresh({ preserveKnown: true });
+        await this.social.refresh({ preserveKnown: true, retryEmpty: true });
         this.matchCelebration.set({
           userId,
           displayName: candidate?.displayName || 'essa pessoa'
@@ -303,18 +305,17 @@ export class DiscoverPage implements OnInit {
     await this.router.navigate(['/app/matches']);
   }
 
-  private async waitForActiveMatch(targetUserId: string): Promise<boolean> {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const matches = await firstValueFrom(this.matchApi.list()).catch(() => []);
-      if (matches.some(match =>
+  private async waitForActiveMatch(targetUserId: string): Promise<MatchView | null> {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const matches = await firstValueFrom(this.matchApi.list()).catch(() => [] as MatchView[]);
+      const active = matches.find(match =>
         match.status === 'ACTIVE' && (match.userA === targetUserId || match.userB === targetUserId)
-      )) {
-        return true;
-      }
-      if (attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 80 * (attempt + 1)));
+      );
+      if (active) return active;
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
       }
     }
-    return false;
+    return null;
   }
 }

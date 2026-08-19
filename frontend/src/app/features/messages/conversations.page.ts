@@ -118,7 +118,7 @@ export class ConversationsPage implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      await this.social.refresh({ preserveKnown: true });
+      await this.social.refresh({ preserveKnown: true, retryEmpty: true });
       const list = this.conversations();
       const ids = Array.from(new Set(list.map(item => this.otherUser(item)).filter(Boolean)));
 

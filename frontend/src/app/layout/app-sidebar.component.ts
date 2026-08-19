@@ -94,7 +94,7 @@ import { IconComponent } from '../ui/icon/icon.component';
         </div>
 
         <section class="hm-sidebar-scroll" aria-live="polite">
-          @if (socialLoading()) {
+          @if (socialLoading() && !matches().length && !conversations().length) {
             <div class="hm-sidebar-loading">
               @for (_ of [0,1,2,3,4,5]; track _) {
                 <div class="hm-sidebar-skeleton"></div>
@@ -283,7 +283,7 @@ export class AppSidebarComponent {
       ),
       // Matches/conversations are session state. Refresh them without ever
       // replacing a valid list with a transient empty response during tab changes.
-      this.social.refresh({ preserveKnown: true })
+      this.social.refresh({ preserveKnown: true, retryEmpty: true })
     ]);
 
     if (ownPhotosResult.ok) {

@@ -110,7 +110,7 @@ export class MatchesPage implements OnInit {
     try {
       // Route changes must not create a new independent match state. Refresh the
       // session store and render its last known-good value immediately.
-      await this.social.refresh({ preserveKnown: true });
+      await this.social.refresh({ preserveKnown: true, retryEmpty: true });
       const list = this.matches();
       const conversationMap: Record<string, string> = {};
       for (const conversation of this.social.conversations()) conversationMap[conversation.matchId] = conversation.id;
