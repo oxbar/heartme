@@ -35,22 +35,43 @@ public class RecommendationService {
             .toList();
     }
 
-    private boolean eligible(ProfileQuery.ProfileView me, ProfileQuery.ProfileView p) {
-        if (!p.discoverable()) return false;
-        int age = Period.between(p.birthDate(), LocalDate.now()).getYears();
-        if (me.strictAge() && (age < me.minAge() || age > me.maxAge())) return false;
-        if (p.strictAge()) {
-            int myAge = Period.between(me.birthDate(), LocalDate.now()).getYears();
-            if (myAge < p.minAge() || myAge > p.maxAge()) return false;
+    /**
+     * Discovery preferences belong to the viewer and define the viewer's feed.
+     *
+     * A candidate's own lookingFor/age/distance/body preferences must not be
+     * re-applied in reverse here. Doing that makes discovery implicitly mutual
+     * and can hide two otherwise valid accounts from one another when only one
+     * side has changed a preference (or an older onboarding default was saved).
+     *
+     * Inbound visibility is controlled by discoverable plus trust/safety rules.
+     */
+    private boolean eligible(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate) {
+        if (!candidate.discoverable()) return false;
+
+        int candidateAge = age(candidate.birthDate());
+        if (me.strictAge() && (candidateAge < me.minAge() || candidateAge > me.maxAge())) return false;
+
+        if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(candidate.gender())) return false;
+
+        if (!me.preferredBodyTypes().isEmpty()
+            && candidate.bodyType() != null
+            && !me.preferredBodyTypes().contains(candidate.bodyType())) {
+            return false;
         }
-        if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(p.gender())) return false;
-        if (!p.lookingFor().isEmpty() && !p.lookingFor().contains(me.gender())) return false;
-        if (!me.preferredBodyTypes().isEmpty() && p.bodyType() != null && !me.preferredBodyTypes().contains(p.bodyType())) return false;
-        if (!p.preferredBodyTypes().isEmpty() && me.bodyType() != null && !p.preferredBodyTypes().contains(me.bodyType())) return false;
-        Double distance = distance(me, p);
-        if (me.strictDistance() && distance != null && distance > me.maxDistanceKm()) return false;
-        if (p.strictDistance() && distance != null && distance > p.maxDistanceKm()) return false;
+
+        Double distance = distance(me, candidate);
+        if (!me.globalMode()
+            && me.strictDistance()
+            && distance != null
+            && distance > me.maxDistanceKm()) {
+            return false;
+        }
+
         return true;
+    }
+
+    private static int age(LocalDate birthDate) {
+        return Period.between(birthDate, LocalDate.now()).getYears();
     }
 
     private double score(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
@@ -86,7 +107,7 @@ public class RecommendationService {
             p.userId(),
             p.displayName(),
             p.bio(),
-            Period.between(p.birthDate(), LocalDate.now()).getYears(),
+            age(p.birthDate()),
             p.gender(),
             p.city(),
             p.state(),

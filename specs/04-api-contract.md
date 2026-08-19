@@ -62,6 +62,10 @@ Values: `MAN | WOMAN | NON_BINARY | OTHER` (sent in profile `gender` and in `loo
 ## Discovery / interactions
 
 - `GET /discovery?limit=20`
+  - filters candidates using the current viewer's `lookingFor`, strict age/distance and preferred body-type settings;
+  - `globalMode=true` bypasses the viewer's strict distance radius;
+  - the candidate's private discovery preferences are not reverse-applied to the viewer's feed;
+  - candidate must still be `discoverable=true`, not blocked either way and not already seen by the viewer.
 - `POST /interactions/{targetUserId}`
 
 ```json

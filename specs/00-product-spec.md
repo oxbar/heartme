@@ -42,7 +42,8 @@ Himeros is an 18+ dating platform focused on intentional discovery, mutual match
 ### Discovery & Recommendation
 - candidate eligibility;
 - block/seen filters;
-- mutual preference filtering;
+- viewer-owned preference filtering (the current user controls their own feed);
+- inbound visibility controlled by discoverable + trust/safety, not by reverse-applying the candidate's private preferences;
 - geographical distance when coordinates exist;
 - deterministic score based on interests + distance;
 - ranked response.

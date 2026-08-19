@@ -240,6 +240,7 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
                     </button>
                   }
                 </div>
+                <p class="mt-2 text-xs text-muted-foreground">Selecione pelo menos uma opção. Essa escolha define quem aparece no seu Discovery.</p>
               </div>
 
               <div class="hm-ob-slider-card">
@@ -388,7 +389,7 @@ export class OnboardingPage {
 
   readonly error = signal('');
 
-  readonly lookingForSet = signal<Set<Gender>>(new Set(['WOMAN']));
+  readonly lookingForSet = signal<Set<Gender>>(new Set());
   readonly preferredBodySet = signal<Set<BodyType>>(new Set());
 
   readonly minAge = signal(18);
@@ -482,6 +483,12 @@ export class OnboardingPage {
   onSubmit(event: Event): void {
     event.preventDefault();
     this.commitDraft();
+
+    if (this.lookingForSet().size === 0) {
+      this.error.set('Selecione pelo menos uma opção em “Interessado em” para configurar seu Discovery.');
+      return;
+    }
+
     void submit(this.onboardingForm, async () => {
       this.error.set('');
       try {
