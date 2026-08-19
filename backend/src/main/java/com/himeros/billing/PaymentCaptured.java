@@ -1,0 +1,1 @@
+package com.himeros.billing;import java.math.BigDecimal;import java.time.Instant;import java.util.UUID;public record PaymentCaptured(UUID paymentId,UUID userId,String plan,BigDecimal amount,String currency,Instant occurredAt){}

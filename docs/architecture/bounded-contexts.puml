@@ -1,0 +1,42 @@
+@startuml
+title Himeros — Bounded Context Map
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "Himeros Core" {
+  [Identity]
+  [Profile]
+  [Media]
+  [Recommendation]
+  [Interaction]
+  [Match]
+  [Messaging]
+  [Trust & Safety]
+  [Notification]
+  [Billing]
+  [Premium]
+}
+
+[Identity] --> [Profile] : user identity
+[Profile] --> [Recommendation] : profile query
+[Trust & Safety] --> [Recommendation] : exclusions
+[Interaction] --> [Match] : MutualLikeDetected
+[Match] --> [Messaging] : MatchCreated
+[Match] ..> [Notification] : event
+[Billing] --> [Premium] : PaymentCaptured
+[Media] --> [Profile] : photos
+
+note right of [Recommendation]
+Candidate retrieval
+Eligibility
+Ranking
+Diversity (future)
+end note
+
+note right of [Trust & Safety]
+Block
+Report
+Moderation (future)
+Risk / anti-abuse (future)
+end note
+@enduml

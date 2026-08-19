@@ -1,0 +1,9 @@
+package com.himeros.match;
+import com.himeros.interaction.MutualLikeDetected;import com.himeros.shared.*;import com.himeros.shared.outbox.OutboxService;import java.time.Instant;import java.util.*;import org.springframework.context.ApplicationEventPublisher;import org.springframework.context.event.EventListener;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;
+@Service public class MatchService {private final MatchRepository repo;private final OutboxService outbox;private final ApplicationEventPublisher events;public MatchService(MatchRepository repo,OutboxService outbox,ApplicationEventPublisher events){this.repo=repo;this.outbox=outbox;this.events=events;}
+ @EventListener public void on(MutualLikeDetected e){create(e.userA(),e.userB());}
+ @Transactional public MatchView create(UUID x,UUID y){UUID a=x.toString().compareTo(y.toString())<0?x:y,b=a.equals(x)?y:x;Optional<Match> existing=repo.findByUserAAndUserB(a,b);if(existing.isPresent())return view(existing.get());Match m=repo.save(new Match(a,b));MatchCreated event=new MatchCreated(m.id(),m.a(),m.b(),Instant.now());events.publishEvent(event);outbox.append("Match",m.id(),"himeros.match.created.v1","himeros.match.events.v1",m.id(),event);return view(m);}
+ @Transactional(readOnly=true) public List<MatchView> list(UUID user){return repo.findForUser(user).stream().map(MatchService::view).toList();}
+ @Transactional public void unmatch(UUID user,UUID id){Match m=repo.findById(id).orElseThrow(()->new ResourceNotFoundException("Match not found"));if(!m.a().equals(user)&&!m.b().equals(user))throw new ForbiddenException("Not your match");m.unmatch();}
+ static MatchView view(Match m){return new MatchView(m.id(),m.a(),m.b(),m.status().name(),m.createdAt());}public record MatchView(UUID id,UUID userA,UUID userB,String status,Instant createdAt){}
+}

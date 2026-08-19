@@ -1,0 +1,33 @@
+@startuml
+title Himeros — Like → Match → Conversation → Notification
+autonumber
+actor "User A" as A
+participant "Angular Web" as Web
+participant "Interaction" as I
+database "PostgreSQL" as DB
+participant "Match" as M
+participant "Messaging" as Msg
+participant "Outbox" as O
+queue "Kafka" as K
+participant "Notification Consumer" as N
+
+A -> Web : Like User B
+Web -> I : POST /interactions/{B}\nAuthorization: Bearer
+I -> DB : insert/update LIKE
+I -> DB : check reciprocal LIKE
+alt mutual like
+  I -> M : MutualLikeDetected(A,B)
+  M -> DB : create unique Match
+  M -> Msg : MatchCreated
+  Msg -> DB : create Conversation
+  M -> O : append MatchCreated
+  O -> DB : insert outbox_event\nsame local transaction
+end
+I --> Web : command result
+
+... after commit ...
+O -> K : publish himeros.match.events.v1
+K -> N : at-least-once MatchCreated
+N -> DB : idempotency check
+N -> DB : create notifications
+@enduml

@@ -1,0 +1,4 @@
+package com.himeros.media;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="photos")
+class Photo { enum Status{ACTIVE,REJECTED} @Id private UUID id; @Column(name="user_id",nullable=false) private UUID userId; @Column(nullable=false,length=1000) private String url; @Column(name="storage_key",nullable=false,unique=true) private String storageKey; @Column(nullable=false) private int position; @Enumerated(EnumType.STRING) @Column(nullable=false) private Status status; @Column(name="created_at",nullable=false) private Instant createdAt; protected Photo(){} Photo(UUID id,UUID userId,String url,String key,int pos){this.id=id;this.userId=userId;this.url=url;this.storageKey=key;this.position=pos;this.status=Status.ACTIVE;this.createdAt=Instant.now();} UUID id(){return id;} UUID userId(){return userId;} String url(){return url;} String key(){return storageKey;} int position(){return position;} }

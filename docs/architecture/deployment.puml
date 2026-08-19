@@ -1,0 +1,38 @@
+@startuml
+title Himeros — Production-Oriented Deployment Evolution
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+node "Internet" {
+  [Angular Browser] as browser
+}
+cloud "CDN / WAF / TLS" as edge
+node "Application Platform" {
+  [Himeros Core API] as api
+  [Outbox Relay] as relay
+  [Notification Workers] as workers
+  [Future Realtime Gateway] as rt
+  [Future Recommendation Workers] as rec
+}
+database "Managed PostgreSQL\nHA + PITR" as pg
+rectangle "Managed Redis" as redis
+queue "Kafka / Event Platform" as kafka
+cloud "Object Storage / CDN" as media
+cloud "Observability\nLogs + Metrics + Traces" as obs
+
+browser --> edge
+edge --> api
+edge --> rt
+api --> pg
+api --> redis
+api --> media
+relay --> pg
+relay --> kafka
+kafka --> workers
+kafka --> rec
+rt --> redis
+api ..> obs
+workers ..> obs
+rt ..> obs
+rec ..> obs
+@enduml

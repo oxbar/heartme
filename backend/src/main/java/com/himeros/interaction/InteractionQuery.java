@@ -1,0 +1,1 @@
+package com.himeros.interaction; import java.util.*; public interface InteractionQuery { boolean hasSeen(UUID actor,UUID target); Set<UUID> seenBy(UUID actor); }

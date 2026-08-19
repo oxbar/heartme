@@ -1,0 +1,3 @@
+package com.himeros.interaction;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="interactions") class Interaction {enum Type{LIKE,PASS,SUPER_LIKE}@Id private UUID id;@Column(name="actor_id",nullable=false)private UUID actorId;@Column(name="target_id",nullable=false)private UUID targetId;@Enumerated(EnumType.STRING)@Column(nullable=false)private Type type;@Column(name="created_at",nullable=false)private Instant createdAt;protected Interaction(){}Interaction(UUID a,UUID t,Type type){this.id=UUID.randomUUID();this.actorId=a;this.targetId=t;this.type=type;this.createdAt=Instant.now();}void change(Type t){this.type=t;this.createdAt=Instant.now();}Type type(){return type;}}

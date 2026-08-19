@@ -1,0 +1,29 @@
+@startuml
+title Himeros — Browser Authentication
+autonumber
+actor Member
+participant "Angular" as Web
+participant "Auth API" as API
+database "PostgreSQL" as DB
+
+Member -> Web : submit credentials
+Web -> API : POST /auth/web/login
+API -> DB : verify user/password
+API -> DB : persist hash(refresh token)
+API --> Web : access token JSON\nSet-Cookie refresh HttpOnly
+note right of Web
+Access token: memory only
+Refresh token: inaccessible to JS
+end note
+
+Web -> API : GET protected resource\nBearer access token
+API --> Web : 200
+
+... access token expires ...
+Web -> API : protected request
+API --> Web : 401
+Web -> API : POST /auth/web/refresh\nHttpOnly cookie automatically sent
+API -> DB : validate + revoke/rotate old refresh
+API --> Web : new access token\nSet-Cookie new refresh
+Web -> API : retry original request
+@enduml

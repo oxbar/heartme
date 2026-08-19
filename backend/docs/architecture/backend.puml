@@ -1,0 +1,43 @@
+@startuml
+!theme plain
+skinparam componentStyle rectangle
+skinparam shadowing false
+actor "Flutter App" as app
+rectangle "Edge / API" as edge
+package "Himeros Backend" {
+  [Identity]
+  [Profile]
+  [Media]
+  [Recommendation]
+  [Interaction]
+  [Match]
+  [Messaging]
+  [Trust & Safety]
+  [Billing]
+  [Premium]
+  [Notification]
+  [Outbox]
+}
+database PostgreSQL
+queue Kafka
+collections Redis
+app --> edge
+edge --> [Identity]
+edge --> [Profile]
+edge --> [Recommendation]
+edge --> [Interaction]
+edge --> [Messaging]
+edge --> [Billing]
+[Interaction] --> [Match] : MutualLikeDetected
+[Match] --> [Messaging] : MatchCreated
+[Billing] --> [Premium] : PaymentCaptured
+[Identity] --> PostgreSQL
+[Profile] --> PostgreSQL
+[Interaction] --> PostgreSQL
+[Match] --> PostgreSQL
+[Messaging] --> PostgreSQL
+[Outbox] --> PostgreSQL
+[Outbox] --> Kafka
+[Notification] --> Kafka
+[Recommendation] --> Redis
+@enduml

@@ -1,0 +1,34 @@
+@startuml
+title Himeros — System Context / Target Logical Architecture
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam roundcorner 12
+
+actor "Member" as user
+rectangle "Angular 22 Web" as web
+rectangle "Future Flutter App" as mobile
+rectangle "Edge / WAF / TLS" as edge
+rectangle "Himeros Backend\nModular Monolith" as core
+database "PostgreSQL" as pg
+rectangle "Redis" as redis
+queue "Kafka" as kafka
+cloud "Object Storage + CDN\n(production adapter)" as storage
+cloud "Email / Push / PSP\n(production adapters)" as providers
+
+user --> web
+user --> mobile
+web --> edge : HTTPS / WSS
+mobile --> edge : HTTPS / WSS
+edge --> core : REST / STOMP
+core --> pg : transactional state
+core --> redis : rate limit / ephemeral
+core --> kafka : Outbox relay
+core --> storage : media port
+core --> providers : integration ports
+
+note bottom of core
+Logical boundaries are designed for extraction.
+Initial deployment stays intentionally consolidated
+until workload/ownership justify distribution.
+end note
+@enduml

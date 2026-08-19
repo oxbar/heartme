@@ -1,0 +1,102 @@
+package com.himeros.recommendation;
+
+import com.himeros.interaction.InteractionQuery;
+import com.himeros.profile.*;
+import com.himeros.shared.ResourceNotFoundException;
+import com.himeros.trustsafety.TrustSafetyQuery;
+import java.time.*;
+import java.util.*;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RecommendationService {
+    private final ProfileQuery profiles;
+    private final InteractionQuery interactions;
+    private final TrustSafetyQuery safety;
+
+    public RecommendationService(ProfileQuery profiles, InteractionQuery interactions, TrustSafetyQuery safety) {
+        this.profiles = profiles;
+        this.interactions = interactions;
+        this.safety = safety;
+    }
+
+    public List<Recommendation> discover(UUID user, int limit) {
+        ProfileQuery.ProfileView me = profiles.find(user)
+            .orElseThrow(() -> new ResourceNotFoundException("Complete your profile first"));
+        Set<UUID> seen = interactions.seenBy(user);
+        Set<UUID> excluded = safety.excluded(user);
+
+        return profiles.candidatePool(user, Math.max(100, limit * 10)).stream()
+            .filter(p -> !seen.contains(p.userId()) && !excluded.contains(p.userId()))
+            .filter(p -> eligible(me, p))
+            .map(p -> new Recommendation(publicProfile(p), score(me, p), roundedDistance(me, p)))
+            .sorted(Comparator.comparingDouble(Recommendation::score).reversed())
+            .limit(Math.min(limit, 100))
+            .toList();
+    }
+
+    private boolean eligible(ProfileQuery.ProfileView me, ProfileQuery.ProfileView p) {
+        int age = Period.between(p.birthDate(), LocalDate.now()).getYears();
+        if (age < me.minAge() || age > me.maxAge()) return false;
+        if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(p.gender())) return false;
+        if (!p.lookingFor().isEmpty() && !p.lookingFor().contains(me.gender())) return false;
+        Double distance = distance(me, p);
+        return distance == null || distance <= me.maxDistanceKm();
+    }
+
+    private double score(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+        double score = 50;
+        Set<String> overlap = new HashSet<>(a.interests());
+        overlap.retainAll(b.interests());
+        score += Math.min(25, overlap.size() * 5);
+        Double distance = distance(a, b);
+        if (distance != null) {
+            score += Math.max(0, 25 - (distance / Math.max(1, a.maxDistanceKm())) * 25);
+        }
+        return Math.round(score * 100.0) / 100.0;
+    }
+
+    private Double roundedDistance(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+        Double d = distance(a, b);
+        return d == null ? null : Math.round(d * 10.0) / 10.0;
+    }
+
+    private Double distance(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+        if (a.latitude() == null || a.longitude() == null || b.latitude() == null || b.longitude() == null) return null;
+        double radiusKm = 6371;
+        double dLat = Math.toRadians(b.latitude() - a.latitude());
+        double dLon = Math.toRadians(b.longitude() - a.longitude());
+        double h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(a.latitude())) * Math.cos(Math.toRadians(b.latitude()))
+            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return radiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    }
+
+    private static PublicCandidate publicProfile(ProfileQuery.ProfileView p) {
+        return new PublicCandidate(
+            p.userId(),
+            p.displayName(),
+            p.bio(),
+            Period.between(p.birthDate(), LocalDate.now()).getYears(),
+            p.gender(),
+            p.city(),
+            p.state(),
+            p.country(),
+            p.interests()
+        );
+    }
+
+    public record PublicCandidate(
+        UUID userId,
+        String displayName,
+        String bio,
+        int age,
+        Gender gender,
+        String city,
+        String state,
+        String country,
+        Set<String> interests
+    ) {}
+
+    public record Recommendation(PublicCandidate profile, double score, Double distanceKm) {}
+}
