@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, ViewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { PhotoView, PublicProfileView } from '../core/api/contracts';
 import { IconComponent } from '../ui/icon/icon.component';

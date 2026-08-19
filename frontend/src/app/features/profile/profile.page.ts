@@ -6,15 +6,13 @@ import type { PhotoView, ProfileView } from '../../core/api/contracts';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { IconComponent } from '../../ui/icon/icon.component';
-import { AvatarComponent } from '../../ui/avatar/avatar.component';
-import { LoadingStateComponent } from '../../shared/loading-state.component';
 import { EmptyStateComponent } from '../../shared/empty-state.component';
 import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.component';
 
 @Component({
   selector: 'hm-profile-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, AvatarComponent, LoadingStateComponent, EmptyStateComponent, IconComponent, PhotoCarouselComponent],
+  imports: [CommonModule, RouterLink, EmptyStateComponent, IconComponent, PhotoCarouselComponent],
   template: `
     <section class="hm-profile-screen" aria-labelledby="profile-title">
       @if (loading()) {
