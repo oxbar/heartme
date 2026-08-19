@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import type { ConversationView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
@@ -87,7 +87,7 @@ export class ConversationsPage implements OnInit {
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
 
-  readonly enriching = signal(true);
+  readonly enriching = signal(false);
   readonly error = signal('');
   readonly conversations = this.social.conversations;
   readonly socialLoading = this.social.loading;
@@ -95,17 +95,11 @@ export class ConversationsPage implements OnInit {
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
 
-  readonly showSkeleton = signal<boolean>(true);
-
-  private updateSkeletonState(): void {
-    const hasAnyData = this.conversations().length > 0 || this.social.matches().length > 0;
-    const storeLoading = this.socialLoading();
-    const enrichmentLoading = this.enriching();
-    this.showSkeleton.set(storeLoading && enrichmentLoading && !hasAnyData);
-  }
+  readonly showSkeleton = computed(() =>
+    this.conversations().length === 0 && (!this.social.loaded() || this.socialLoading())
+  );
 
   async ngOnInit(): Promise<void> {
-    this.updateSkeletonState();
     const convosInit = this.conversations();
     if (convosInit.length > 0) {
       void this.enrich(convosInit);
@@ -133,7 +127,10 @@ export class ConversationsPage implements OnInit {
     this.error.set('');
     try {
       await this.social.refresh({ preserveKnown: true, retryEmpty: true });
-      this.updateSkeletonState();
+      if (this.social.error() && !this.conversations().length && !this.social.matches().length) {
+        this.error.set('Tente novamente em alguns instantes.');
+        return;
+      }
       const list = this.conversations();
       await this.enrich(list);
     } catch {
@@ -143,7 +140,6 @@ export class ConversationsPage implements OnInit {
 
   private async enrich(list: ConversationView[]): Promise<void> {
     this.enriching.set(true);
-    this.updateSkeletonState();
     try {
       const ids = Array.from(new Set(list.map(item => this.otherUser(item)).filter(Boolean)));
 
@@ -177,7 +173,6 @@ export class ConversationsPage implements OnInit {
       }
     } finally {
       this.enriching.set(false);
-      this.updateSkeletonState();
     }
   }
 }

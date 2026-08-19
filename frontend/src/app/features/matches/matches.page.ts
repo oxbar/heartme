@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import type { MatchView, PhotoView, PublicProfileView } from '../../core/api/contracts';
@@ -19,7 +19,7 @@ import { IconComponent } from '../../ui/icon/icon.component';
             <h1 id="matches-title">Seus matches</h1>
             <p>Pessoas que também curtiram você.</p>
           </div>
-          <button type="button" class="hm-dark-button" (click)="load()" [disabled]="enriching()">
+          <button type="button" class="hm-dark-button" (click)="load()" [disabled]="enriching() || socialLoading()">
             <hm-icon name="refresh-ccw" size="16" [class]="enriching() ? 'animate-spin' : ''" />
             Atualizar
           </button>
@@ -72,7 +72,7 @@ export class MatchesPage implements OnInit {
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
 
-  readonly enriching = signal(true);
+  readonly enriching = signal(false);
   readonly error = signal('');
   readonly matches = this.social.matches;
   readonly socialLoading = this.social.loading;
@@ -80,25 +80,17 @@ export class MatchesPage implements OnInit {
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly conversationByMatch = signal<Record<string, string>>({});
 
-  readonly showSkeleton = signal<boolean>(true);
-
-  private updateSkeletonState(): void {
-    const hasAnyData = this.matches().length > 0;
-    const storeLoading = this.socialLoading();
-    const enrichmentLoading = this.enriching();
-    this.showSkeleton.set(storeLoading && enrichmentLoading && !hasAnyData);
-  }
+  readonly showSkeleton = computed(() =>
+    this.matches().length === 0 && (!this.social.loaded() || this.socialLoading())
+  );
 
   async ngOnInit(): Promise<void> {
-    this.updateSkeletonState();
     const matchesInit = this.matches();
     const convosInit = this.social.conversations();
     const map: Record<string, string> = {};
     for (const c of convosInit) map[c.matchId] = c.id;
     this.conversationByMatch.set(map);
     if (matchesInit.length > 0) {
-      this.enriching.set(true);
-      this.updateSkeletonState();
       void this.enrich(matchesInit);
     }
     await this.load();
@@ -129,7 +121,10 @@ export class MatchesPage implements OnInit {
     this.error.set('');
     try {
       await this.social.refresh({ preserveKnown: true, retryEmpty: true });
-      this.updateSkeletonState();
+      if (this.social.error() && !this.matches().length) {
+        this.error.set('Tente novamente em alguns instantes.');
+        return;
+      }
       const list = this.matches();
       const conversationMap: Record<string, string> = {};
       for (const conversation of this.social.conversations()) conversationMap[conversation.matchId] = conversation.id;
@@ -142,7 +137,6 @@ export class MatchesPage implements OnInit {
 
   private async enrich(list: MatchView[]): Promise<void> {
     this.enriching.set(true);
-    this.updateSkeletonState();
     try {
       const ids = Array.from(new Set(list.map(match => this.otherUser(match)).filter(Boolean)));
 
@@ -161,7 +155,6 @@ export class MatchesPage implements OnInit {
       this.photos.set(ids.length ? await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})) : {});
     } finally {
       this.enriching.set(false);
-      this.updateSkeletonState();
     }
   }
 }

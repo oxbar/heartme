@@ -46,7 +46,47 @@ class MessagingServiceSocialTest {
 
         assertTrue(result.heartReactedByMe());
         assertEquals(1, result.heartReactionCount());
+        assertEquals(message.id(), result.messageId());
         verify(f.ws).convertAndSend(eq("/topic/conversations/" + conversationId + "/reactions"), any(MessagingService.ReactionEvent.class));
+    }
+
+    @Test
+    void unmatchConversationDeniesHeartReaction() {
+        Fixture f = new Fixture();
+        Conversation conversation = new Conversation(f.matchId, f.a, f.b);
+        UUID conversationId = conversation.id();
+        Message message = new Message(conversationId, f.b, "oi");
+        when(f.conversations.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(f.matches.activeCounterparts(f.a)).thenReturn(Set.of());
+
+        assertThrows(RuntimeException.class, () -> f.service.toggleHeart(f.a, conversationId, message.id()));
+        verify(f.reactions, never()).addHeart(any(), any(), any());
+        verify(f.reactions, never()).removeHeart(any(), any());
+    }
+
+    @Test
+    void historySetsAllHeartReactionFields() {
+        Fixture f = new Fixture();
+        Conversation conversation = new Conversation(f.matchId, f.a, f.b);
+        UUID conversationId = conversation.id();
+        Message message = new Message(conversationId, f.b, "oi");
+        when(f.conversations.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(f.matches.activeCounterparts(f.a)).thenReturn(Set.of(f.b));
+        when(f.messages.latest(eq(conversationId), any())).thenReturn(List.of(message));
+        when(f.reactions.summaries(anyCollection(), eq(f.a))).thenReturn(Map.of(
+            message.id(),
+            new MessageReactionRepository.ReactionSummary(message.id(), 2, true)
+        ));
+
+        List<MessagingService.MessageView> result = f.service.history(f.a, conversationId, null, 20);
+
+        assertEquals(1, result.size());
+        MessagingService.MessageView view = result.getFirst();
+        assertEquals(2, view.heartReactionCount());
+        assertTrue(view.heartReactedByMe());
+        assertEquals(message.id(), view.id());
+        assertEquals(conversationId, view.conversationId());
+        assertEquals(message.sender(), view.senderId());
     }
 
     @Test

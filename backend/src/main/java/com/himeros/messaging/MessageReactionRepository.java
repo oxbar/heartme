@@ -2,6 +2,7 @@ package com.himeros.messaging;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,7 +30,7 @@ class MessageReactionRepository {
             insert into message_reactions(message_id,user_id,reaction,created_at)
             values (?,?,?,?)
             on conflict (message_id,user_id) do update set reaction=excluded.reaction, created_at=excluded.created_at
-            """, messageId, userId, HEART, at) > 0;
+            """, messageId, userId, HEART, Timestamp.from(at)) > 0;
     }
 
     boolean removeHeart(UUID messageId, UUID userId) {

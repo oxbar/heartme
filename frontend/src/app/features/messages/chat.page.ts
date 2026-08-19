@@ -166,6 +166,7 @@ export class ChatPage implements OnDestroy {
   readonly id = input('');
   readonly loading = signal(true);
   readonly error = signal('');
+  readonly reactionError = signal('');
   readonly sending = signal(false);
   readonly unmatching = signal(false);
   readonly messages = signal<MessageView[]>([]);
@@ -303,6 +304,19 @@ export class ChatPage implements OnDestroy {
     const conversationId = this.id();
     if (!conversationId) return;
     void (async () => {
+      this.reactionError.set('');
+      const previous = this.messages();
+      const optimistic = previous.map(message => {
+        if (message.id !== messageId) return message;
+        const nextActive = !message.heartReactedByMe;
+        return {
+          ...message,
+          heartReactedByMe: nextActive,
+          heartReactionCount: nextActive ? message.heartReactionCount + 1 : Math.max(0, message.heartReactionCount - 1)
+        };
+      });
+      this.messages.set(optimistic);
+
       try {
         const reaction = await firstValueFrom(this.messagingApi.toggleHeart(conversationId, messageId));
         this.messages.update(list => list.map(message => message.id === messageId ? {
@@ -311,7 +325,9 @@ export class ChatPage implements OnDestroy {
           heartReactedByMe: reaction.heartReactedByMe
         } : message));
       } catch {
-        this.error.set('Não foi possível reagir à mensagem.');
+        this.messages.set(previous);
+        this.reactionError.set('Não foi possível reagir à mensagem.');
+        setTimeout(() => this.reactionError() && this.reactionError.set(''), 2500);
       }
     })();
   }

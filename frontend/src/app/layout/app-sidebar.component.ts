@@ -224,11 +224,13 @@ export class AppSidebarComponent {
       .subscribe(event => {
         this.activeUrl.set(event.urlAfterRedirects);
         if (event.urlAfterRedirects.startsWith('/app/matches') || event.urlAfterRedirects.startsWith('/app/messages')) {
-          void this.load();
+          // Route changes must not trigger a second destructive social refresh.
+          // The page owns its refresh; the sidebar only re-enriches the shared state.
+          void this.load(false);
         }
       });
 
-    void this.load();
+    void this.load(true);
     void firstValueFrom(this.profileApi.pingPresence()).catch(() => null);
     this.presenceHeartbeat = setInterval(
       () => void firstValueFrom(this.profileApi.pingPresence()).catch(() => null),
@@ -266,24 +268,26 @@ export class AppSidebarComponent {
     return conversation ? ['/app/messages', conversation.id] : ['/app/profiles', this.otherUser(match)];
   }
 
-  private load(): Promise<void> {
+  private load(refreshSocial: boolean): Promise<void> {
     if (this.enrichmentLoadInFlight) return this.enrichmentLoadInFlight;
-    this.enrichmentLoadInFlight = this.performLoad().finally(() => {
+    this.enrichmentLoadInFlight = this.performLoad(refreshSocial).finally(() => {
       this.enrichmentLoadInFlight = null;
     });
     return this.enrichmentLoadInFlight;
   }
 
-  private async performLoad(): Promise<void> {
+  private async performLoad(refreshSocial: boolean): Promise<void> {
     const [, ownPhotosResult] = await Promise.all([
       this.profileStore.load().catch(() => null),
       Promise.resolve(firstValueFrom(this.mediaApi.mine())).then(
         value => ({ ok: true as const, value }),
         () => ({ ok: false as const })
       ),
-      // Matches/conversations are session state. Refresh them without ever
-      // replacing a valid list with a transient empty response during tab changes.
-      this.social.refresh({ preserveKnown: true, retryEmpty: true })
+      // Do one network refresh on shell startup. During Matches <-> Messages
+      // navigation, reuse the root store instead of issuing a competing request.
+      refreshSocial
+        ? this.social.refresh({ preserveKnown: true, retryEmpty: true })
+        : this.social.ensureLoaded()
     ]);
 
     if (ownPhotosResult.ok) {

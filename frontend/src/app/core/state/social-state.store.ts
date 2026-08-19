@@ -15,6 +15,12 @@ interface SocialSnapshot {
   conversations: ConversationView[];
 }
 
+interface InFlightRefresh {
+  owner: string | null;
+  epoch: number;
+  promise: Promise<void>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SocialStateStore {
   private readonly matchApi = inject(MatchApi);
@@ -28,21 +34,20 @@ export class SocialStateStore {
   readonly loaded = signal(false);
   readonly error = signal<unknown | null>(null);
 
-  private inFlight: { owner: string | null; promise: Promise<void> } | null = null;
+  private inFlight: InFlightRefresh | null = null;
   private ownerUserId: string | null = null;
+  private ownerEpoch = 0;
   private destroyed = false;
 
   constructor() {
-    this.ownerUserId = this.session.userId();
-    this.restorePersisted(this.ownerUserId);
+    // Do the first owner synchronization synchronously. The effect below keeps
+    // following SessionStore afterwards, but callers never have to wait for an
+    // effect flush before refresh()/ensureLoaded() sees the correct owner.
+    this.syncOwner();
 
     effect(() => {
-      const nextUserId = this.session.userId();
-      if (this.ownerUserId !== nextUserId) {
-        this.ownerUserId = nextUserId;
-        this.resetForOwnerChange();
-        this.restorePersisted(nextUserId);
-      }
+      this.session.userId();
+      this.syncOwner();
     });
 
     this.destroyRef.onDestroy(() => {
@@ -51,23 +56,34 @@ export class SocialStateStore {
   }
 
   ensureLoaded(): Promise<void> {
+    this.syncOwner();
     return this.loaded() ? Promise.resolve() : this.refresh({ preserveKnown: true, retryEmpty: true });
   }
 
   refresh(options: SocialRefreshOptions = { preserveKnown: true }): Promise<void> {
-    const owner = this.ownerUserId;
-    if (this.inFlight?.owner === owner) return this.inFlight.promise;
+    const owner = this.syncOwner();
+    const epoch = this.ownerEpoch;
+
+    if (!owner || this.destroyed) {
+      this.loading.set(false);
+      return Promise.resolve();
+    }
+
+    if (this.inFlight?.owner === owner && this.inFlight.epoch === epoch) {
+      return this.inFlight.promise;
+    }
 
     let request!: Promise<void>;
-    request = this.performRefresh(options, owner, () => {
+    request = this.performRefresh(options, owner, epoch, () => {
       if (this.inFlight?.promise === request) this.inFlight = null;
     });
-    this.inFlight = { owner, promise: request };
+    this.inFlight = { owner, epoch, promise: request };
     return request;
   }
 
   rememberMatch(match: MatchView): void {
-    if (match.status !== 'ACTIVE') return;
+    const owner = this.syncOwner();
+    if (!owner || match.status !== 'ACTIVE') return;
     this.matches.update(list => dedupeMatches([match, ...list]));
     this.loaded.set(true);
     this.error.set(null);
@@ -75,11 +91,24 @@ export class SocialStateStore {
   }
 
   removeMatch(matchId: string): void {
+    const owner = this.syncOwner();
+    if (!owner) return;
     this.matches.update(list => list.filter(match => match.id !== matchId));
     this.conversations.update(list => list.filter(conversation => conversation.matchId !== matchId));
     this.loaded.set(true);
     this.error.set(null);
     this.persist();
+  }
+
+  private syncOwner(): string | null {
+    const nextUserId = this.session.userId();
+    if (nextUserId === this.ownerUserId) return nextUserId;
+
+    this.ownerUserId = nextUserId;
+    this.ownerEpoch += 1;
+    this.resetForOwnerChange();
+    this.restorePersisted(nextUserId);
+    return nextUserId;
   }
 
   private resetForOwnerChange(): void {
@@ -91,9 +120,17 @@ export class SocialStateStore {
     this.inFlight = null;
   }
 
+  private isCurrentOwner(owner: string | null, epoch: number): boolean {
+    return !this.destroyed
+      && owner === this.ownerUserId
+      && epoch === this.ownerEpoch
+      && owner === this.session.userId();
+  }
+
   private async performRefresh(
     options: SocialRefreshOptions,
     owner: string | null,
+    epoch: number,
     onFinally: () => void
   ): Promise<void> {
     let finalized = false;
@@ -103,12 +140,15 @@ export class SocialStateStore {
         onFinally();
       }
     };
-    if (owner !== this.ownerUserId || this.destroyed) {
+
+    if (!this.isCurrentOwner(owner, epoch)) {
       complete();
       return;
     }
+
     this.loading.set(true);
     this.error.set(null);
+
     try {
       const attempts = options.retryEmpty ? 4 : 1;
       let finalMatches: MatchView[] | null = null;
@@ -128,7 +168,7 @@ export class SocialStateStore {
           )
         ]);
 
-        if (owner !== this.ownerUserId || owner !== this.session.userId() || this.destroyed) {
+        if (!this.isCurrentOwner(owner, epoch)) {
           complete();
           return;
         }
@@ -155,26 +195,14 @@ export class SocialStateStore {
         await delay([90, 180, 360][attempt] ?? 360);
       }
 
+      if (!this.isCurrentOwner(owner, epoch)) return;
+
       if (finalMatches !== null) {
-        const next = finalMatches;
-        if (!options.preserveKnown) {
-          this.matches.set(next);
-        } else if (next.length > 0) {
-          this.matches.set(next);
-        } else if (!this.loaded()) {
-          this.matches.set(next);
-        }
+        this.applyMatches(finalMatches, options.preserveKnown !== false);
       }
 
       if (finalConversations !== null) {
-        const next = finalConversations;
-        if (!options.preserveKnown) {
-          this.conversations.set(next);
-        } else if (next.length > 0) {
-          this.conversations.set(next);
-        } else if (!this.loaded()) {
-          this.conversations.set(next);
-        }
+        this.applyConversations(finalConversations, options.preserveKnown !== false);
       }
 
       if (anySuccess) {
@@ -185,15 +213,28 @@ export class SocialStateStore {
         this.error.set(lastError);
       }
     } catch (err) {
-      if (owner === this.ownerUserId && !this.loaded()) {
+      if (this.isCurrentOwner(owner, epoch)) {
         this.error.set(err);
       }
     } finally {
       complete();
-      if (owner === this.ownerUserId) {
+      // A stale request must never flip loading=false for a newer owner/request.
+      if (this.isCurrentOwner(owner, epoch)) {
         this.loading.set(false);
       }
     }
+  }
+
+  private applyMatches(next: MatchView[], preserveKnown: boolean): void {
+    const existing = this.matches();
+    if (preserveKnown && existing.length > 0 && next.length === 0) return;
+    this.matches.set(next);
+  }
+
+  private applyConversations(next: ConversationView[], preserveKnown: boolean): void {
+    const existing = this.conversations();
+    if (preserveKnown && existing.length > 0 && next.length === 0) return;
+    this.conversations.set(next);
   }
 
   private persist(): void {

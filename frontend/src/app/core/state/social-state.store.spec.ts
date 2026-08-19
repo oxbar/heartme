@@ -153,6 +153,23 @@ describe('SocialStateStore', () => {
     expect(store.conversations().length).toBe(1);
   });
 
+  it('synchronizes the owner before ensureLoaded so route navigation cannot reuse stale state', async () => {
+    const currentUser = signal<string | null>('user-a');
+    const matchApi = { list: vi.fn().mockReturnValueOnce(of([match])).mockReturnValueOnce(of([])) };
+    const store = createStore(matchApi, { conversations: vi.fn(() => of([])) }, currentUser);
+
+    await store.refresh({ preserveKnown: true });
+    expect(store.matches()).toEqual([match]);
+
+    // Simulate a synchronous session owner change immediately followed by a
+    // navigation-driven ensureLoaded(), before Angular's effect queue flushes.
+    currentUser.set('user-c');
+    await store.ensureLoaded();
+
+    expect(store.matches()).toEqual([]);
+    expect(matchApi.list).toHaveBeenCalledTimes(2);
+  });
+
   it('exposes an error signal without wiping known-good data on transient HTTP failures', async () => {
     const failingOnce = vi.fn()
       .mockReturnValueOnce(of([match]))
