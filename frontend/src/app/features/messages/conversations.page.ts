@@ -1,86 +1,110 @@
-import { ChangeDetectionStrategy, Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView } from '../../core/api/contracts';
+import type { ConversationView, PhotoView, PublicProfileView } from '../../core/api/contracts';
 import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
-import { ConversationListItemComponent } from '../../shared/conversation-list-item.component';
-import { LoadingStateComponent } from '../../shared/loading-state.component';
-import { EmptyStateComponent } from '../../shared/empty-state.component';
+import { MediaApi } from '../../core/api/media.api';
 import { SessionStore } from '../../core/auth/session.store';
+import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
-import { PageHeaderComponent } from '../../ui/page-header/page-header.component';
 
 @Component({
-  imports: [CommonModule, ConversationListItemComponent, LoadingStateComponent, EmptyStateComponent, IconComponent, PageHeaderComponent],
+  imports: [RouterLink, AvatarComponent, IconComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in">
-      <hm-page-header title="Mensagens" subtitle="Suas conversas com matches." icon="message-circle">
-        <div pageHeaderActions>
-          <button
-            type="button"
-            (click)="load()"
-            class="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted transition"
-          >
-            <hm-icon name="rotate-ccw" size="16" [class]="loading() ? 'animate-spin' : ''" />
-            Atualizar
-          </button>
+    <section class="h-full bg-[hsl(var(--dating-canvas))]">
+      <div class="hidden h-full lg:flex">
+        <div class="hm-page-empty-center">
+          <div class="hm-page-empty-icon"><hm-icon name="message-circle" size="30" /></div>
+          <strong>Escolha uma conversa</strong>
+          <span>Suas mensagens ficam na coluna à esquerda. Selecione um match para continuar.</span>
         </div>
-      </hm-page-header>
+      </div>
 
-      @if (loading()) {
-        <hm-loading-state />
-      } @else if (error()) {
-        <div class="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p class="text-destructive mb-4">{{ error() }}</p>
-          <button
-            type="button"
-            (click)="load()"
-            class="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition"
-          >
-            Tentar novamente
+      <div class="h-full overflow-y-auto p-3 pb-24 lg:hidden">
+        <header class="mb-4 flex items-center justify-between px-1 pt-2">
+          <div>
+            <h1 class="text-2xl font-black text-white">Mensagens</h1>
+            <p class="mt-1 text-xs text-white/50">Converse com seus matches.</p>
+          </div>
+          <button type="button" class="hm-mobile-icon-button" aria-label="Atualizar conversas" (click)="load()">
+            <hm-icon name="refresh-ccw" size="18" [class]="loading() ? 'animate-spin' : ''" />
           </button>
-        </div>
-      } @else if (!conversations().length) {
-        <hm-empty-state
-          icon="message-circle"
-          title="Sem conversas ainda"
-          description="Quando você der match com alguém, a conversa aparecerá aqui."
-        />
-      } @else {
-        <div class="grid gap-3">
-          @for (c of conversations(); track c.id) {
-            <hm-conversation-list-item
-              [conversation]="c"
-              [profile]="profiles()[otherUser(c)]"
-              [preview]="previews()[c.id]"
-              [unread]="0"
-            />
-          }
-        </div>
-      }
-    </div>
+        </header>
+
+        @if (loading()) {
+          <div class="space-y-2">
+            @for (_ of [0,1,2,3,4,5]; track _) {
+              <div class="h-[76px] animate-pulse rounded-xl bg-white/5"></div>
+            }
+          </div>
+        } @else if (error()) {
+          <div class="hm-page-empty-center min-h-[50vh]">
+            <div class="hm-page-empty-icon"><hm-icon name="alert-circle" size="27" /></div>
+            <strong>Não foi possível carregar as conversas</strong>
+            <span>{{ error() }}</span>
+            <button type="button" class="hm-dark-button is-primary" (click)="load()">Tentar novamente</button>
+          </div>
+        } @else if (!conversations().length) {
+          <div class="hm-page-empty-center min-h-[50vh]">
+            <div class="hm-page-empty-icon"><hm-icon name="heart" size="27" /></div>
+            <strong>Sem conversas ainda</strong>
+            <span>Quando surgir um match, você poderá conversar por aqui.</span>
+            <a routerLink="/app/discover" class="hm-dark-button is-primary">Descobrir pessoas</a>
+          </div>
+        } @else {
+          <div class="space-y-1">
+            @for (conversation of conversations(); track conversation.id) {
+              @let userId = otherUser(conversation);
+              <a
+                [routerLink]="['/app/messages', conversation.id]"
+                class="flex min-h-[78px] items-center gap-3 rounded-xl px-3 text-white no-underline transition hover:bg-white/[0.07]"
+              >
+                <div class="relative shrink-0">
+                  <hm-avatar [src]="firstPhoto(userId)" [name]="profileFor(userId)?.displayName || 'Match'" [size]="56" />
+                  <span class="hm-online-dot"></span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <strong class="block truncate text-[15px]">{{ profileFor(userId)?.displayName || 'Match' }}</strong>
+                  <span class="mt-1 block truncate text-xs text-white/45">Toque para abrir a conversa</span>
+                </div>
+                <hm-icon name="arrow-right" size="18" class="text-white/30" />
+              </a>
+            }
+          </div>
+        }
+      </div>
+    </section>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ConversationsPage implements OnInit {
   private readonly messagingApi = inject(MessagingApi);
   private readonly profileApi = inject(ProfileApi);
+  private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
 
   readonly loading = signal(true);
   readonly error = signal('');
   readonly conversations = signal<ConversationView[]>([]);
-  readonly profiles = signal<Record<string, any>>({});
-  readonly previews = signal<Record<string, string>>({});
+  readonly profiles = signal<Record<string, PublicProfileView>>({});
+  readonly photos = signal<Record<string, PhotoView[]>>({});
 
   async ngOnInit(): Promise<void> {
     await this.load();
   }
 
-  otherUser(c: ConversationView): string {
-    return c.userA === this.session.userId() ? c.userB : c.userA;
+  otherUser(conversation: ConversationView): string {
+    return conversation.userA === this.session.userId() ? conversation.userB : conversation.userA;
+  }
+
+  profileFor(userId: string): PublicProfileView | null {
+    return this.profiles()[userId] ?? null;
+  }
+
+  firstPhoto(userId: string): string | null {
+    return [...(this.photos()[userId] ?? [])].sort((a, b) => a.position - b.position)[0]?.url ?? null;
   }
 
   async load(): Promise<void> {
@@ -89,27 +113,28 @@ export class ConversationsPage implements OnInit {
     try {
       const list = await firstValueFrom(this.messagingApi.conversations());
       const sorted = [...list].sort((a, b) => {
-        const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : new Date(a.createdAt).getTime();
-        const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : new Date(b.createdAt).getTime();
-        return tb - ta;
+        const left = new Date(a.lastMessageAt || a.createdAt).getTime();
+        const right = new Date(b.lastMessageAt || b.createdAt).getTime();
+        return right - left;
       });
       this.conversations.set(sorted);
-      const otherIds = sorted.map(c => this.otherUser(c)).filter((v, i, a) => a.indexOf(v) === i);
-      const profilesMap: Record<string, any> = {};
-      const previewsMap: Record<string, string> = {};
-      for (const id of otherIds) {
-        try { profilesMap[id] = await firstValueFrom(this.profileApi.byUser(id)); } catch {}
-      }
-      for (const c of sorted) {
+      const ids = Array.from(new Set(sorted.map(item => this.otherUser(item)).filter(Boolean)));
+
+      const pairs = await Promise.all(ids.map(async id => {
         try {
-          const msgs = await firstValueFrom(this.messagingApi.messages(c.id, undefined, 1));
-          if (msgs.length) previewsMap[c.id] = msgs[msgs.length - 1].content;
-        } catch {}
+          return [id, await firstValueFrom(this.profileApi.byUser(id))] as const;
+        } catch {
+          return null;
+        }
+      }));
+      const profileMap: Record<string, PublicProfileView> = {};
+      for (const pair of pairs) {
+        if (pair) profileMap[pair[0]] = pair[1];
       }
-      this.profiles.set(profilesMap);
-      this.previews.set(previewsMap);
+      this.profiles.set(profileMap);
+      this.photos.set(ids.length ? await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})) : {});
     } catch {
-      this.error.set('Não foi possível carregar suas conversas.');
+      this.error.set('Tente novamente em alguns instantes.');
     } finally {
       this.loading.set(false);
     }

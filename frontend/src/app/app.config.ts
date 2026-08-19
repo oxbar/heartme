@@ -1,8 +1,8 @@
-import { ApplicationConfig, importProvidersFrom, inject, provideAppInitializer } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
+import { ApplicationConfig, importProvidersFrom, inject, provideAppInitializer } from '@angular/core';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { LucideAngularModule,
+import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
+import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
@@ -24,12 +24,14 @@ import { LucideAngularModule,
   Loader2,
   Lock,
   LogOut,
+  LucideAngularModule,
   Mail,
   MapPin,
   Menu,
   MessageCircle,
   MessageSquare,
   Pencil,
+  RefreshCcw,
   RefreshCw,
   RotateCcw,
   Ruler,
@@ -89,6 +91,7 @@ export const appConfig: ApplicationConfig = {
       MessageCircle,
       MessageSquare,
       Pencil,
+      RefreshCcw,
       RefreshCw,
       RotateCcw,
       Ruler,

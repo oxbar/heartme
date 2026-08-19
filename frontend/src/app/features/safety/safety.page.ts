@@ -10,7 +10,7 @@ type SafetyTab = 'blocks' | 'reports';
   imports: [CommonModule, EmptyStateComponent, IconComponent, PageHeaderComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in">
+    <div class="h-full overflow-y-auto p-6 lg:p-8 space-y-6 animate-fade-in">
       <hm-page-header title="Segurança" subtitle="Gerencie bloqueios e denúncias." icon="shield-check"></hm-page-header>
 
       <div class="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">

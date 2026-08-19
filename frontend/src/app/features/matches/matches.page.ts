@@ -1,103 +1,140 @@
-import { ChangeDetectionStrategy, Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { MatchView } from '../../core/api/contracts';
+import type { ConversationView, MatchView, PhotoView, PublicProfileView } from '../../core/api/contracts';
 import { MatchApi } from '../../core/api/match.api';
 import { ProfileApi } from '../../core/api/profile.api';
-import { MatchCardComponent } from '../../shared/match-card.component';
-import { LoadingStateComponent } from '../../shared/loading-state.component';
-import { EmptyStateComponent } from '../../shared/empty-state.component';
+import { MediaApi } from '../../core/api/media.api';
+import { MessagingApi } from '../../core/api/messaging.api';
+import { SessionStore } from '../../core/auth/session.store';
 import { IconComponent } from '../../ui/icon/icon.component';
-import { PageHeaderComponent } from '../../ui/page-header/page-header.component';
 
 @Component({
-  imports: [CommonModule, MatchCardComponent, LoadingStateComponent, EmptyStateComponent, IconComponent, PageHeaderComponent],
+  imports: [RouterLink, IconComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in">
-      <hm-page-header title="Matches" subtitle="Todas as pessoas que deram match com você." icon="heart">
-        <div pageHeaderActions>
-          <button
-            type="button"
-            (click)="load()"
-            class="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted transition"
-          >
-            <hm-icon name="rotate-ccw" size="16" [class]="loading() ? 'animate-spin' : ''" />
+    <section class="hm-matches-screen" aria-labelledby="matches-title">
+      <div class="hm-matches-content">
+        <header class="hm-matches-heading">
+          <div>
+            <h1 id="matches-title">Seus matches</h1>
+            <p>Pessoas que também curtiram você.</p>
+          </div>
+          <button type="button" class="hm-dark-button" (click)="load()" [disabled]="loading()">
+            <hm-icon name="refresh-ccw" size="16" [class]="loading() ? 'animate-spin' : ''" />
             Atualizar
           </button>
-        </div>
-      </hm-page-header>
+        </header>
 
-      @if (loading()) {
-        <hm-loading-state />
-      } @else if (error()) {
-        <div class="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p class="text-destructive mb-4">{{ error() }}</p>
-          <button
-            type="button"
-            (click)="load()"
-            class="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      } @else if (!matches().length) {
-        <hm-empty-state
-          icon="heart"
-          title="Nenhum match ainda"
-          description="Continue dando like em perfis compatíveis para aparecerem aqui."
-        />
-      } @else {
-        <div class="grid gap-3">
-          @for (match of matches(); track match.id) {
-            <hm-match-card
-              [match]="match"
-              [profile]="profiles()[match.userA === currentUserId() ? match.userB : match.userA]"
-              [lastMessage]="''"
-            />
-          }
-        </div>
-      }
-    </div>
+        @if (loading()) {
+          <div class="hm-matches-grid" aria-label="Carregando matches">
+            @for (_ of [0,1,2,3,4,5,6,7]; track _) {
+              <div class="aspect-[0.78] animate-pulse rounded-[10px] bg-white/5"></div>
+            }
+          </div>
+        } @else if (error()) {
+          <div class="hm-page-empty-center min-h-[420px]">
+            <div class="hm-page-empty-icon"><hm-icon name="heart" size="28" /></div>
+            <strong>Não foi possível carregar seus matches</strong>
+            <span>{{ error() }}</span>
+            <button type="button" class="hm-dark-button is-primary" (click)="load()">Tentar novamente</button>
+          </div>
+        } @else if (!matches().length) {
+          <div class="hm-page-empty-center min-h-[420px]">
+            <div class="hm-page-empty-icon"><hm-icon name="heart" size="28" /></div>
+            <strong>Nenhum match ainda</strong>
+            <span>Continue descobrindo pessoas. Quando a curtida for recíproca, ela aparece aqui.</span>
+            <a routerLink="/app/discover" class="hm-dark-button is-primary">Descobrir pessoas</a>
+          </div>
+        } @else {
+          <div class="hm-matches-grid">
+            @for (match of matches(); track match.id) {
+              @let userId = otherUser(match);
+              <a [routerLink]="conversationRoute(match)" class="hm-match-card-large">
+                @if (firstPhoto(userId); as photo) {
+                  <img [src]="photo" [alt]="profileFor(userId)?.displayName || 'Match'" loading="lazy" />
+                } @else {
+                  <div class="hm-dating-card-fallback">{{ initials(profileFor(userId)?.displayName || 'H') }}</div>
+                }
+                <strong>{{ profileFor(userId)?.displayName || 'Match' }}</strong>
+                <span>{{ conversationByMatch()[match.id] ? 'Vocês deram match · conversar' : 'Vocês deram match · ver perfil' }}</span>
+              </a>
+            }
+          </div>
+        }
+      </div>
+    </section>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MatchesPage implements OnInit {
   private readonly matchApi = inject(MatchApi);
   private readonly profileApi = inject(ProfileApi);
+  private readonly mediaApi = inject(MediaApi);
+  private readonly messagingApi = inject(MessagingApi);
+  private readonly session = inject(SessionStore);
 
   readonly loading = signal(true);
   readonly error = signal('');
   readonly matches = signal<MatchView[]>([]);
-  readonly profiles = signal<Record<string, any>>({});
-  readonly currentUserId = signal<string | null>(null);
+  readonly profiles = signal<Record<string, PublicProfileView>>({});
+  readonly photos = signal<Record<string, PhotoView[]>>({});
+  readonly conversationByMatch = signal<Record<string, string>>({});
 
   async ngOnInit(): Promise<void> {
-    const session = await import('../../core/auth/session.store').then(m => m.SessionStore);
-    const store = inject(session);
-    this.currentUserId.set(store.userId());
     await this.load();
+  }
+
+  otherUser(match: MatchView): string {
+    return match.userA === this.session.userId() ? match.userB : match.userA;
+  }
+
+  profileFor(userId: string): PublicProfileView | null {
+    return this.profiles()[userId] ?? null;
+  }
+
+  firstPhoto(userId: string): string | null {
+    return [...(this.photos()[userId] ?? [])].sort((a, b) => a.position - b.position)[0]?.url ?? null;
+  }
+
+  initials(name: string): string {
+    return name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'H';
+  }
+
+  conversationRoute(match: MatchView): (string | number)[] {
+    const conversationId = this.conversationByMatch()[match.id];
+    return conversationId ? ['/app/messages', conversationId] : ['/app/profiles', this.otherUser(match)];
   }
 
   async load(): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      const list = await firstValueFrom(this.matchApi.list());
+      const [list, conversations]: [MatchView[], ConversationView[]] = await Promise.all([
+        firstValueFrom(this.matchApi.list()),
+        firstValueFrom(this.messagingApi.conversations()).catch(() => [] as ConversationView[])
+      ]);
       this.matches.set(list);
-      const ids = Array.from(new Set(list.flatMap(m => [m.userA, m.userB]))).filter(id => id !== this.currentUserId());
-      const profilesMap: Record<string, any> = {};
-      if (ids.length) {
-        for (const id of ids) {
-          try {
-            const p = await firstValueFrom(this.profileApi.byUser(id));
-            profilesMap[id] = p;
-          } catch {}
+      const conversationMap: Record<string, string> = {};
+      for (const conversation of conversations) conversationMap[conversation.matchId] = conversation.id;
+      this.conversationByMatch.set(conversationMap);
+      const ids = Array.from(new Set(list.map(match => this.otherUser(match)).filter(Boolean)));
+
+      const profilePairs: Array<readonly [string, PublicProfileView] | null> = await Promise.all(ids.map(async id => {
+        try {
+          return [id, await firstValueFrom(this.profileApi.byUser(id))] as const;
+        } catch {
+          return null;
         }
+      }));
+      const profileMap: Record<string, PublicProfileView> = {};
+      for (const pair of profilePairs) {
+        if (pair) profileMap[pair[0]] = pair[1];
       }
-      this.profiles.set(profilesMap);
+      this.profiles.set(profileMap);
+      this.photos.set(ids.length ? await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})) : {});
     } catch {
-      this.error.set('Não foi possível carregar seus matches.');
+      this.error.set('Tente novamente em alguns instantes.');
     } finally {
       this.loading.set(false);
     }

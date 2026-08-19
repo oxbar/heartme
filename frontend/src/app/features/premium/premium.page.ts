@@ -11,7 +11,7 @@ import { PageHeaderComponent } from '../../ui/page-header/page-header.component'
   imports: [CommonModule, LoadingStateComponent, IconComponent, PageHeaderComponent],
   standalone: true,
   template: `
-    <div class="space-y-8 animate-fade-in">
+    <div class="h-full overflow-y-auto p-6 lg:p-8 space-y-8 animate-fade-in">
       <hm-page-header title="Himeros Premium" subtitle="Desbloqueie recursos exclusivos para encontrar melhores conexões." icon="crown"></hm-page-header>
 
       <div class="text-center max-w-2xl mx-auto">

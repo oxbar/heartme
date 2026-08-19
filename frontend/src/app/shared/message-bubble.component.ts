@@ -1,28 +1,31 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import type { MessageView } from '../core/api/contracts';
 import { SessionStore } from '../core/auth/session.store';
+import { IconComponent } from '../ui/icon/icon.component';
 
 @Component({
   selector: 'hm-message-bubble',
-  imports: [CommonModule],
+  imports: [IconComponent],
   standalone: true,
   template: `
-    <div class="flex w-full" [ngClass]="isMine() ? 'justify-end' : 'justify-start'">
+    <div class="flex w-full items-end gap-2" [class.justify-end]="isMine()">
       <div
-        class="max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm"
-        [ngClass]="isMine() ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-secondary text-secondary-foreground rounded-bl-sm'"
+        class="max-w-[min(76%,560px)] rounded-[16px] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm"
+        [class.bg-primary]="isMine()"
+        [class.text-white]="isMine()"
+        [class.rounded-br-[5px]]="isMine()"
+        [class.bg-black]="!isMine()"
+        [class.text-white/90]="!isMine()"
+        [class.rounded-bl-[5px]]="!isMine()"
       >
-        @if (message()) {
-          <p class="whitespace-pre-wrap break-words">{{ message()!.content }}</p>
-          <p
-            class="text-[10px] mt-1 opacity-70 text-right"
-            [ngClass]="isMine() ? 'text-primary-foreground' : 'text-secondary-foreground'"
-          >
-            {{ timestamp() }}
-          </p>
+        @if (message(); as currentMessage) {
+          <p class="whitespace-pre-wrap break-words">{{ currentMessage.content }}</p>
+          <p class="mt-1 text-right text-[10px] opacity-55">{{ timestamp() }}</p>
         }
       </div>
+      @if (!isMine()) {
+        <span class="mb-1 text-white/28" aria-hidden="true"><hm-icon name="heart" size="15" /></span>
+      }
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -31,16 +34,10 @@ export class MessageBubbleComponent {
   private readonly session = inject(SessionStore);
   readonly message = input<MessageView | null>(null);
 
-  readonly isMine = computed(() => {
-    const m = this.message();
-    if (!m) return false;
-    return m.senderId === this.session.userId();
-  });
-
+  readonly isMine = computed(() => this.message()?.senderId === this.session.userId());
   readonly timestamp = computed(() => {
-    const d = this.message()?.sentAt;
-    if (!d) return '';
-    const date = new Date(d);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const value = this.message()?.sentAt;
+    if (!value) return '';
+    return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   });
 }

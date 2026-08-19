@@ -39,8 +39,8 @@ spring:
       ack-mode: record
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 12MB
+      max-file-size: 15MB
+      max-request-size: 18MB
 
 server:
   port: ${SERVER_PORT:8080}

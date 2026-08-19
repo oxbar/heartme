@@ -10,7 +10,7 @@ import { PageHeaderComponent } from '../../ui/page-header/page-header.component'
   imports: [CommonModule, FormsModule, IconComponent, PageHeaderComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in max-w-2xl">
+    <div class="h-full overflow-y-auto p-6 lg:p-8 space-y-6 animate-fade-in max-w-3xl">
       <hm-page-header title="Configurações" subtitle="Personalize sua experiência no Himeros." icon="settings"></hm-page-header>
 
       <div class="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-6">

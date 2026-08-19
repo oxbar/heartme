@@ -13,7 +13,7 @@ import { PageHeaderComponent } from '../../ui/page-header/page-header.component'
   imports: [CommonModule, NotificationItemComponent, LoadingStateComponent, EmptyStateComponent, IconComponent, PageHeaderComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in">
+    <div class="h-full overflow-y-auto p-6 lg:p-8 space-y-6 animate-fade-in">
       <hm-page-header title="Notificações" subtitle="Atualizações sobre matches, mensagens e segurança." icon="bell">
         <div pageHeaderActions class="flex items-center gap-2">
           <button

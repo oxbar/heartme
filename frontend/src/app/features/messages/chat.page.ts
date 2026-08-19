@@ -1,175 +1,225 @@
-import { ChangeDetectionStrategy, Component, inject, input, signal, OnInit, OnDestroy, ViewChild, ElementRef, afterNextRender } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, ViewChild, afterNextRender, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
-import type { ConversationView, MessageView, PublicProfileView } from '../../core/api/contracts';
+import { firstValueFrom, Subscription } from 'rxjs';
+import type { MessageView, PhotoView, PublicProfileView } from '../../core/api/contracts';
 import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
+import { MediaApi } from '../../core/api/media.api';
+import { ChatRealtime } from '../../core/realtime/chat-realtime';
+import { SessionStore } from '../../core/auth/session.store';
 import { MessageBubbleComponent } from '../../shared/message-bubble.component';
 import { AvatarComponent } from '../../shared/avatar.component';
-import { SessionStore } from '../../core/auth/session.store';
 import { IconComponent } from '../../ui/icon/icon.component';
+import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.component';
 
 @Component({
-  imports: [CommonModule, FormsModule, RouterLink, MessageBubbleComponent, AvatarComponent, IconComponent],
+  imports: [FormsModule, RouterLink, MessageBubbleComponent, AvatarComponent, IconComponent, PhotoCarouselComponent],
   standalone: true,
   template: `
-    <div class="h-[calc(100dvh-2rem)] flex flex-col rounded-2xl border border-border bg-card shadow-sm overflow-hidden animate-fade-in">
-      <header class="flex items-center gap-3 px-4 py-3 border-b border-border flex-none">
-        <a
-          routerLink="/app/messages"
-          class="inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-muted transition text-foreground"
-          aria-label="Voltar"
-        >
-          <hm-icon name="arrow-left" size="20" />
-        </a>
-        @if (profile(); as p) {
-          <hm-avatar [name]="p.displayName" [size]="40" />
-          <div class="flex-1 min-w-0">
-            <h2 class="font-semibold text-card-foreground truncate">{{ p.displayName }}</h2>
-            <p class="text-xs text-muted-foreground">{{ p.city }}, {{ p.age }} anos</p>
-          </div>
-        } @else {
-          <div class="flex-1">
-            <div class="h-4 w-1/3 rounded bg-muted animate-skeleton-pulse mb-1"></div>
-            <div class="h-3 w-1/4 rounded bg-muted animate-skeleton-pulse"></div>
-          </div>
-        }
-      </header>
-
-      <div #scrollRef class="flex-1 overflow-y-auto px-4 py-5 space-y-3 bg-background/40">
-        @if (loading()) {
-          <div class="space-y-3">
-            @for (_ of [0,1,2,3,4]; track _) {
-              <div class="flex" [ngClass]="_ % 2 === 0 ? 'justify-start' : 'justify-end'">
-                <div class="max-w-[70%] h-16 rounded-2xl bg-muted animate-skeleton-pulse"></div>
-              </div>
-            }
-          </div>
-        } @else if (error()) {
-          <div class="h-full flex flex-col items-center justify-center text-center py-10">
-            <p class="text-destructive mb-4">{{ error() }}</p>
-            <button
-              type="button"
-              (click)="load()"
-              class="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition"
-            >
-              <hm-icon name="refresh-ccw" size="16" />
-              Tentar novamente
-            </button>
-          </div>
-        } @else if (!messages().length) {
-          <div class="h-full flex flex-col items-center justify-center text-center py-10">
-            <p class="text-muted-foreground max-w-sm">
-              Envie a primeira mensagem para começar a conversa. Seja gentil e respeitoso(a).
-            </p>
-          </div>
-        } @else {
-          @for (m of messages(); track m.id) {
-            <hm-message-bubble [message]="m" />
+    <section class="hm-chat-shell" aria-label="Conversa">
+      <div class="hm-chat-column">
+        <header class="hm-chat-header">
+          <a routerLink="/app/messages" class="hm-mobile-icon-button lg:hidden" aria-label="Voltar para mensagens">
+            <hm-icon name="arrow-left" size="19" />
+          </a>
+          @if (profile(); as currentProfile) {
+            <hm-avatar [src]="primaryPhoto()" [name]="currentProfile.displayName" [size]="42" />
+            <div class="min-w-0 flex-1">
+              <h2>{{ currentProfile.displayName }}</h2>
+              <p>Vocês deram match · seja respeitoso e autêntico</p>
+            </div>
+            <a [routerLink]="['/app/profiles', currentProfile.userId]" class="hm-mobile-icon-button" aria-label="Abrir perfil">
+              <hm-icon name="menu" size="19" />
+            </a>
+          } @else {
+            <div class="h-10 w-10 animate-pulse rounded-full bg-white/5"></div>
+            <div class="flex-1 space-y-2">
+              <div class="h-4 w-36 animate-pulse rounded bg-white/5"></div>
+              <div class="h-3 w-52 animate-pulse rounded bg-white/5"></div>
+            </div>
           }
-        }
+        </header>
+
+        <div #scrollRef class="hm-chat-messages" aria-live="polite">
+          @if (loading()) {
+            <div class="space-y-4">
+              @for (_ of [0,1,2,3,4,5]; track _) {
+                <div class="flex" [class.justify-end]="_ % 2 === 1">
+                  <div class="h-14 w-[min(65%,320px)] animate-pulse rounded-2xl bg-white/5"></div>
+                </div>
+              }
+            </div>
+          } @else if (error()) {
+            <div class="hm-page-empty-center min-h-full">
+              <div class="hm-page-empty-icon"><hm-icon name="alert-circle" size="27" /></div>
+              <strong>Não foi possível abrir a conversa</strong>
+              <span>{{ error() }}</span>
+              <button type="button" class="hm-dark-button is-primary" (click)="load()">Tentar novamente</button>
+            </div>
+          } @else if (!messages().length) {
+            <div class="hm-page-empty-center min-h-full">
+              <div class="hm-page-empty-icon"><hm-icon name="message-circle" size="29" /></div>
+              <strong>Comece a conversa</strong>
+              <span>Uma mensagem simples e personalizada costuma ser um ótimo começo.</span>
+            </div>
+          } @else {
+            <div class="space-y-3">
+              @for (message of messages(); track message.id) {
+                <hm-message-bubble [message]="message" />
+              }
+            </div>
+          }
+        </div>
+
+        <form class="hm-chat-compose" (submit)="sendMessage($event)">
+          <input
+            [(ngModel)]="inputContent"
+            [ngModelOptions]="{ standalone: true }"
+            type="text"
+            autocomplete="off"
+            [placeholder]="'Mensagem para ' + (profile()?.displayName || 'seu match')"
+            aria-label="Mensagem"
+          />
+          <button type="submit" class="hm-chat-send" [disabled]="!inputContent.trim() || sending()" aria-label="Enviar mensagem">
+            <hm-icon name="send" size="19" />
+          </button>
+        </form>
       </div>
 
-      <form (submit)="sendMessage($event)" class="flex-none border-t border-border p-3 bg-card flex items-end gap-2">
-        <input
-          [(ngModel)]="inputContent"
-          [ngModelOptions]="{ standalone: true }"
-          type="text"
-          [placeholder]="'Mensagem para ' + (profile()?.displayName || 'pessoa')"
-          class="flex-1 min-h-[42px] rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
-        />
-        <button
-          type="submit"
-          [disabled]="!inputContent.trim() || sending()"
-          class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex-none"
-          aria-label="Enviar mensagem"
-        >
-          <hm-icon name="send" size="20" />
-        </button>
-      </form>
-    </div>
+      <aside class="hm-chat-profile" aria-label="Perfil do match">
+        @if (profile(); as currentProfile) {
+          <div class="hm-chat-profile-title">{{ currentProfile.displayName }} {{ currentProfile.age }}</div>
+          <div class="hm-chat-profile-photo">
+            <hm-photo-carousel
+              [photos]="photos()"
+              [fallbackName]="currentProfile.displayName"
+              [ariaLabel]="'Fotos de ' + currentProfile.displayName"
+            />
+          </div>
+
+          <section class="hm-chat-profile-section">
+            <h3>PROCURANDO CONEXÃO</h3>
+            <p>{{ currentProfile.city }}{{ currentProfile.state ? ', ' + currentProfile.state : '' }}</p>
+          </section>
+
+          @if (currentProfile.bio) {
+            <section class="hm-chat-profile-section">
+              <h3>SOBRE</h3>
+              <p>{{ currentProfile.bio }}</p>
+            </section>
+          }
+
+          @if (currentProfile.interests.length) {
+            <section class="hm-chat-profile-section">
+              <h3>INTERESSES</h3>
+              <div class="hm-chat-tags">
+                @for (interest of currentProfile.interests; track interest) {
+                  <span class="hm-chat-tag">{{ interest }}</span>
+                }
+              </div>
+            </section>
+          }
+
+          <div class="p-4">
+            <a [routerLink]="['/app/profiles', currentProfile.userId]" class="hm-dark-button w-full">Ver perfil completo</a>
+          </div>
+        } @else {
+          <div class="space-y-3 p-5">
+            <div class="h-8 w-1/2 animate-pulse rounded bg-white/5"></div>
+            <div class="aspect-square animate-pulse rounded-xl bg-white/5"></div>
+          </div>
+        }
+      </aside>
+    </section>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class ChatPage implements OnInit, OnDestroy {
+export class ChatPage implements OnDestroy {
   private readonly messagingApi = inject(MessagingApi);
   private readonly profileApi = inject(ProfileApi);
+  private readonly mediaApi = inject(MediaApi);
+  private readonly realtime = inject(ChatRealtime);
   private readonly session = inject(SessionStore);
 
   @ViewChild('scrollRef') scrollRef?: ElementRef<HTMLDivElement>;
 
-  readonly id = input<string>('');
-
+  readonly id = input('');
   readonly loading = signal(true);
   readonly error = signal('');
   readonly sending = signal(false);
   readonly messages = signal<MessageView[]>([]);
   readonly profile = signal<PublicProfileView | null>(null);
+  readonly photos = signal<PhotoView[]>([]);
+  readonly primaryPhoto = signal<string | null>(null);
 
   inputContent = '';
-  private realtimeSub: any = null;
+  private realtimeSub: Subscription | null = null;
 
   constructor() {
     afterNextRender(() => this.scrollToBottom());
-  }
-
-  async ngOnInit(): Promise<void> {
-    await this.load();
-    this.tryRealtime();
+    effect(() => {
+      const conversationId = this.id();
+      if (!conversationId) return;
+      this.profile.set(null);
+      this.photos.set([]);
+      this.primaryPhoto.set(null);
+      void this.load(conversationId);
+      this.startRealtime(conversationId);
+    });
   }
 
   ngOnDestroy(): void {
-    try { this.realtimeSub?.unsubscribe?.(); } catch {}
+    this.realtimeSub?.unsubscribe();
   }
 
-  tryRealtime(): void {
-    import('../../core/realtime/chat-realtime')
-      .then(m => {
-        const svc = inject(m.ChatRealtime);
-        const conversationId = this.id();
-        if (!conversationId) return;
-        try {
-          const sub = svc.messages(conversationId).subscribe((msg: MessageView) => {
-            this.messages.update(list => list.some(x => x.id === msg.id) ? list : [...list, msg]);
-            this.scrollToBottom();
-          });
-          this.realtimeSub = sub;
-        } catch {}
-      })
-      .catch(() => {});
+  private startRealtime(conversationId: string): void {
+    this.realtimeSub?.unsubscribe();
+    try {
+      this.realtimeSub = this.realtime.messages(conversationId).subscribe(message => {
+        this.messages.update(list => list.some(item => item.id === message.id) ? list : [...list, message]);
+        this.scrollToBottom();
+      });
+    } catch {
+      this.realtimeSub = null;
+    }
   }
 
-  scrollToBottom(): void {
+  private scrollToBottom(): void {
     setTimeout(() => {
-      try {
-        const el = this.scrollRef?.nativeElement;
-        if (el) el.scrollTop = el.scrollHeight;
-      } catch {}
+      const element = this.scrollRef?.nativeElement;
+      if (element) element.scrollTop = element.scrollHeight;
     }, 30);
   }
 
-  async load(): Promise<void> {
+  async load(conversationId = this.id()): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      const conversationId = this.id();
-      if (!conversationId) throw new Error('id inválido');
-      const list = await firstValueFrom(this.messagingApi.messages(conversationId, undefined, 100));
-      this.messages.set([...list].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()));
-      try {
-        const convs = await firstValueFrom(this.messagingApi.conversations());
-        const conv = convs.find(c => c.id === conversationId);
-        if (conv) {
-          const otherId = conv.userA === this.session.userId() ? conv.userB : conv.userA;
-          try { this.profile.set(await firstValueFrom(this.profileApi.byUser(otherId))); } catch {}
-        }
-      } catch {}
-      try { await firstValueFrom(this.messagingApi.markRead(conversationId)); } catch {}
+      if (!conversationId) throw new Error('invalid conversation');
+
+      const [messages, conversations] = await Promise.all([
+        firstValueFrom(this.messagingApi.messages(conversationId, undefined, 100)),
+        firstValueFrom(this.messagingApi.conversations())
+      ]);
+      this.messages.set([...messages].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()));
+
+      const conversation = conversations.find(item => item.id === conversationId);
+      if (conversation) {
+        const otherId = conversation.userA === this.session.userId() ? conversation.userB : conversation.userA;
+        const [profile, photos] = await Promise.all([
+          firstValueFrom(this.profileApi.byUser(otherId)),
+          firstValueFrom(this.mediaApi.forUser(otherId)).catch(() => [] as PhotoView[])
+        ]);
+        this.profile.set(profile);
+        this.photos.set(photos);
+        this.primaryPhoto.set([...photos].sort((a, b) => a.position - b.position)[0]?.url ?? null);
+      }
+
+      await firstValueFrom(this.messagingApi.markRead(conversationId)).catch(() => undefined);
       this.scrollToBottom();
     } catch {
-      this.error.set('Não foi possível carregar a conversa.');
+      this.error.set('Verifique sua conexão e tente novamente.');
     } finally {
       this.loading.set(false);
     }
@@ -177,19 +227,22 @@ export class ChatPage implements OnInit, OnDestroy {
 
   sendMessage(event: Event): void {
     event.preventDefault();
-    const content = (this.inputContent || '').trim();
-    if (!content || this.sending()) return;
+    const content = this.inputContent.trim();
     const conversationId = this.id();
-    if (!conversationId) return;
+    if (!content || !conversationId || this.sending()) return;
+
     void (async () => {
       this.sending.set(true);
       try {
-        const msg = await firstValueFrom(this.messagingApi.send(conversationId, content));
-        this.messages.update(list => [...list, msg]);
+        const message = await firstValueFrom(this.messagingApi.send(conversationId, content));
+        this.messages.update(list => list.some(item => item.id === message.id) ? list : [...list, message]);
         this.inputContent = '';
         this.scrollToBottom();
-      } catch {}
-      finally { this.sending.set(false); }
+      } catch {
+        this.error.set('Sua mensagem não foi enviada. Tente novamente.');
+      } finally {
+        this.sending.set(false);
+      }
     })();
   }
 }

@@ -1,245 +1,256 @@
-import { ChangeDetectionStrategy, Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import type { PhotoView, PublicProfileView } from '../../core/api/contracts';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { SafetyApi } from '../../core/api/safety.api';
-import { AvatarComponent } from '../../shared/avatar.component';
-import { LoadingStateComponent } from '../../shared/loading-state.component';
-import { EmptyStateComponent } from '../../shared/empty-state.component';
 import { IconComponent } from '../../ui/icon/icon.component';
-import { PageHeaderComponent } from '../../ui/page-header/page-header.component';
 
 @Component({
-  imports: [CommonModule, FormsModule, AvatarComponent, LoadingStateComponent, EmptyStateComponent, IconComponent, PageHeaderComponent],
+  imports: [FormsModule, IconComponent],
   standalone: true,
   template: `
-    <div class="space-y-6 animate-fade-in">
-      <hm-page-header title="Perfil público" subtitle="Visualize e interaja com este perfil." icon="user">
-        <div pageHeaderActions>
-          <button
-            type="button"
-            (click)="goBack()"
-            class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-background hover:bg-muted transition text-foreground"
-            aria-label="Voltar"
-          >
-            <hm-icon name="arrow-left" size="20" />
-          </button>
-        </div>
-      </hm-page-header>
-
+    <section class="hm-profile-edit-shell" aria-label="Perfil público">
       @if (loading()) {
-        <hm-loading-state />
-      } @else if (error()) {
-        <div class="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p class="text-destructive mb-4">{{ error() }}</p>
-          <button
-            type="button"
-            (click)="load()"
-            class="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition"
-          >
-            <hm-icon name="rotate-ccw" size="16" />
-            Tentar novamente
-          </button>
+        <div class="mx-auto grid w-[min(940px,100%)] gap-7 lg:grid-cols-[430px_1fr]">
+          <div class="h-[650px] animate-pulse rounded-xl bg-white/5"></div>
+          <div class="h-[520px] animate-pulse rounded-xl bg-white/5"></div>
         </div>
-      } @else if (!profile()) {
-        <hm-empty-state icon="user" title="Perfil não encontrado" description="Este perfil não existe ou foi removido." />
-      } @else {
-        <div class="grid lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-1 space-y-6">
-            <div class="rounded-2xl border border-border bg-card p-6 shadow-sm flex flex-col items-center text-center">
-              @if (photos().length) {
-                <div class="w-full aspect-[4/5] rounded-xl border border-border overflow-hidden mb-5 bg-muted">
-                  <img [src]="photos()[0].url" [alt]="profile()!.displayName" class="w-full h-full object-cover" />
-                </div>
+      } @else if (error()) {
+        <div class="hm-page-empty-center min-h-full">
+          <div class="hm-page-empty-icon"><hm-icon name="user" size="28" /></div>
+          <strong>Perfil indisponível</strong>
+          <span>{{ error() }}</span>
+          <button type="button" class="hm-dark-button" (click)="goBack()">Voltar</button>
+        </div>
+      } @else if (profile(); as currentProfile) {
+        <div class="mx-auto grid w-[min(940px,100%)] gap-7 lg:grid-cols-[430px_1fr]">
+          <article class="hm-profile-preview-card self-start">
+            <header class="hm-profile-preview-header">
+              <strong>{{ currentProfile.displayName }}, {{ currentProfile.age }}</strong>
+              <button type="button" class="hm-mobile-icon-button" (click)="goBack()" aria-label="Fechar perfil">
+                <hm-icon name="x" size="19" />
+              </button>
+            </header>
+
+            <div class="hm-profile-preview-media">
+              <div class="hm-photo-progress">
+                @for (photo of orderedPhotos(); track photo.id; let index = $index) {
+                  <span [class.is-active]="index <= photoIndex()"></span>
+                }
+                @if (!orderedPhotos().length) { <span class="is-active"></span> }
+              </div>
+              @if (activePhoto(); as photo) {
+                <img [src]="photo.url" [alt]="currentProfile.displayName" />
               } @else {
-                <hm-avatar [name]="profile()!.displayName" [size]="120" class="mb-5" />
+                <div class="hm-dating-card-fallback">{{ initials(currentProfile.displayName) }}</div>
               }
-              <h2 class="text-xl font-bold text-card-foreground">
-                {{ profile()!.displayName }}, {{ profile()!.age }}
-              </h2>
-              <p class="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                <hm-icon name="map-pin" size="16" />
-                {{ profile()!.city }}{{ profile()!.state ? ', ' + profile()!.state : '' }}
-              </p>
-              @if (profile()!.bio) {
-                <p class="text-sm text-muted-foreground mt-4 text-left w-full">{{ profile()!.bio }}</p>
+              @if (orderedPhotos().length > 1) {
+                <div class="hm-card-photo-nav">
+                  <button type="button" (click)="previousPhoto()" aria-label="Foto anterior"></button>
+                  <button type="button" (click)="nextPhoto()" aria-label="Próxima foto"></button>
+                </div>
               }
-              @if (profile()!.interests.length) {
-                <div class="flex flex-wrap justify-start gap-2 mt-4 w-full">
-                  @for (i of profile()!.interests; track i) {
-                    <span class="inline-flex items-center rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                      <hm-icon name="sparkles" size="12" class="mr-1" />
-                      {{ i }}
-                    </span>
+            </div>
+
+            <footer class="hm-profile-preview-footer">
+              <div class="hm-profile-location">
+                <hm-icon name="map-pin" size="15" />
+                {{ currentProfile.city }}{{ currentProfile.state ? ', ' + currentProfile.state : '' }}
+              </div>
+              @if (currentProfile.interests.length) {
+                <div class="mt-3 flex flex-wrap gap-2">
+                  @for (interest of currentProfile.interests.slice(0, 6); track interest) {
+                    <span class="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-bold text-white/75">{{ interest }}</span>
                   }
                 </div>
               }
-            </div>
-            <div class="rounded-2xl border border-border bg-card p-4 shadow-sm grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                (click)="onBlock()"
-                class="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted transition"
-              >
-                <hm-icon name="shield-alert" size="16" />
-                Bloquear
-              </button>
-              <button
-                type="button"
-                (click)="showReportDialog.set(true)"
-                class="inline-flex items-center justify-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 transition"
-              >
-                <hm-icon name="flag" size="16" />
-                Denunciar
-              </button>
-            </div>
-          </div>
-          <div class="lg:col-span-2 space-y-6">
-            <div class="rounded-2xl border border-border bg-card p-6 shadow-sm">
-              <h3 class="text-lg font-semibold text-card-foreground mb-4">Galeria</h3>
-              @if (photos().length <= 1) {
-                <div class="py-8 text-center text-sm text-muted-foreground">
-                  Nenhuma outra foto disponível.
+            </footer>
+          </article>
+
+          <div class="space-y-3">
+            @if (currentProfile.bio) {
+              <section class="hm-dark-panel p-5">
+                <h2 class="text-xs font-black uppercase tracking-wide text-white/45">Sobre</h2>
+                <p class="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-white/90">{{ currentProfile.bio }}</p>
+              </section>
+            }
+
+            <section class="hm-dark-panel p-5">
+              <h2 class="text-xs font-black uppercase tracking-wide text-white/45">Informações</h2>
+              <div class="mt-3 divide-y divide-white/10 text-sm text-white/85">
+                <div class="flex min-h-12 items-center gap-3">
+                  <hm-icon name="map-pin" size="17" class="text-white/45" />
+                  <span>{{ currentProfile.city }}{{ currentProfile.state ? ', ' + currentProfile.state : '' }}</span>
                 </div>
-              } @else {
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  @for (p of photos().slice(1); track p.id) {
-                    <div class="aspect-square rounded-xl border border-border overflow-hidden bg-muted">
-                      <img [src]="p.url" alt="Foto" class="w-full h-full object-cover" />
-                    </div>
-                  }
+                <div class="flex min-h-12 items-center gap-3">
+                  <hm-icon name="user" size="17" class="text-white/45" />
+                  <span>{{ genderLabel(currentProfile.gender) }}</span>
                 </div>
-              }
-            </div>
-            @if (showReportDialog()) {
-              <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                <div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl animate-fade-in">
-                  <h3 class="text-xl font-bold text-card-foreground mb-2 flex items-center gap-2">
-                    <hm-icon name="flag" size="20" class="text-destructive" />
-                    Denunciar {{ profile()!.displayName }}
-                  </h3>
-                  <p class="text-sm text-muted-foreground mb-4">Selecione o motivo e forneça detalhes.</p>
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-sm font-semibold text-foreground mb-1.5">Motivo</label>
-                      <select
-                        [(ngModel)]="reportReason"
-                        [ngModelOptions]="{ standalone: true }"
-                        class="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input"
-                      >
-                        <option value="">Selecione…</option>
-                        <option value="SPAM">Spam ou comportamento suspeito</option>
-                        <option value="INAPPROPRIATE">Conteúdo inapropriado</option>
-                        <option value="HARASSMENT">Assédio ou abuso</option>
-                        <option value="FAKE">Perfil falso</option>
-                        <option value="OTHER">Outro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label class="block text-sm font-semibold text-foreground mb-1.5">Detalhes</label>
-                      <textarea
-                        [(ngModel)]="reportDetails"
-                        [ngModelOptions]="{ standalone: true }"
-                        rows="4"
-                        class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-input resize-none"
-                        placeholder="Descreva o ocorrido..."
-                      ></textarea>
-                    </div>
-                    <div class="flex items-center justify-end gap-3 pt-2">
-                      <button
-                        type="button"
-                        (click)="showReportDialog.set(false)"
-                        class="inline-flex items-center justify-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted transition"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        [disabled]="reportSubmitting() || !reportReason"
-                        (click)="onReport()"
-                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground shadow-sm hover:opacity-90 transition disabled:opacity-50"
-                      >
-                        @if (reportSubmitting()) {
-                          <span class="w-4 h-4 border-2 border-destructive-foreground/30 border-t-destructive-foreground rounded-full animate-spin"></span>
-                        }
-                        Enviar denúncia
-                      </button>
-                    </div>
-                  </div>
+                <div class="flex min-h-12 items-center gap-3">
+                  <hm-icon name="check-check" size="17" class="text-primary" />
+                  <span>Perfil Himeros</span>
                 </div>
               </div>
-            }
+            </section>
+
+            <section class="hm-dark-panel overflow-hidden">
+              <button type="button" class="flex min-h-14 w-full items-center justify-center gap-2 border-b border-white/10 text-sm font-bold text-white/75 hover:bg-white/[0.04]" (click)="onBlock()">
+                <hm-icon name="shield-alert" size="17" />
+                Bloquear {{ currentProfile.displayName }}
+              </button>
+              <button type="button" class="flex min-h-14 w-full items-center justify-center gap-2 text-sm font-bold text-red-400 hover:bg-red-400/[0.06]" (click)="showReportDialog.set(true)">
+                <hm-icon name="flag" size="17" />
+                Denunciar {{ currentProfile.displayName }}
+              </button>
+            </section>
           </div>
         </div>
+
+        @if (showReportDialog()) {
+          <div class="fixed inset-0 z-[120] grid place-items-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="report-title">
+            <div class="hm-dark-panel w-full max-w-md overflow-hidden shadow-2xl">
+              <header class="hm-dark-panel-header">
+                <h2 id="report-title">Denunciar perfil</h2>
+                <button type="button" class="hm-mobile-icon-button" (click)="showReportDialog.set(false)" aria-label="Fechar">
+                  <hm-icon name="x" size="18" />
+                </button>
+              </header>
+              <div class="p-5">
+                <p class="mb-5 text-sm leading-relaxed text-white/50">Ajude a manter a comunidade segura. Escolha o motivo que melhor descreve a situação.</p>
+                <div class="hm-dark-field">
+                  <label for="report-reason">Motivo</label>
+                  <select id="report-reason" [(ngModel)]="reportReason" [ngModelOptions]="{ standalone: true }">
+                    <option value="">Selecione…</option>
+                    <option value="SPAM">Spam ou comportamento suspeito</option>
+                    <option value="INAPPROPRIATE">Conteúdo inapropriado</option>
+                    <option value="HARASSMENT">Assédio ou abuso</option>
+                    <option value="FAKE">Perfil falso</option>
+                    <option value="OTHER">Outro</option>
+                  </select>
+                </div>
+                <div class="hm-dark-field">
+                  <label for="report-details">Detalhes</label>
+                  <textarea id="report-details" rows="4" [(ngModel)]="reportDetails" [ngModelOptions]="{ standalone: true }" placeholder="Descreva o ocorrido…"></textarea>
+                </div>
+                <button type="button" class="hm-dark-button is-primary w-full" [disabled]="!reportReason || reportSubmitting()" (click)="onReport()">
+                  @if (reportSubmitting()) { <hm-icon name="loader-2" size="16" class="animate-spin" /> }
+                  Enviar denúncia
+                </button>
+              </div>
+            </div>
+          </div>
+        }
       }
-    </div>
+    </section>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class PublicProfilePage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+export class PublicProfilePage {
   private readonly router = inject(Router);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly safetyApi = inject(SafetyApi);
 
+  readonly id = input('');
   readonly loading = signal(true);
   readonly error = signal('');
   readonly profile = signal<PublicProfileView | null>(null);
   readonly photos = signal<PhotoView[]>([]);
-  showReportDialog = signal(false);
+  readonly photoIndex = signal(0);
+  readonly showReportDialog = signal(false);
   readonly reportSubmitting = signal(false);
-
   reportReason = '';
   reportDetails = '';
 
-  async ngOnInit(): Promise<void> {
-    await this.load();
+  readonly orderedPhotos = computed(() => [...this.photos()].sort((a, b) => a.position - b.position));
+  readonly activePhoto = computed(() => this.orderedPhotos()[this.photoIndex()] ?? null);
+
+  constructor() {
+    effect(() => {
+      const profileId = this.id();
+      if (!profileId) return;
+      this.photoIndex.set(0);
+      void this.load(profileId);
+    });
   }
 
-  async load(): Promise<void> {
+  initials(name: string): string {
+    return name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'H';
+  }
+
+  genderLabel(gender: PublicProfileView['gender']): string {
+    const labels: Record<PublicProfileView['gender'], string> = {
+      MAN: 'Homem',
+      WOMAN: 'Mulher',
+      NON_BINARY: 'Não-binário',
+      OTHER: 'Outro'
+    };
+    return labels[gender];
+  }
+
+  previousPhoto(): void {
+    const count = this.orderedPhotos().length;
+    if (count <= 1) return;
+    this.photoIndex.update(index => (index - 1 + count) % count);
+  }
+
+  nextPhoto(): void {
+    const count = this.orderedPhotos().length;
+    if (count <= 1) return;
+    this.photoIndex.update(index => (index + 1) % count);
+  }
+
+  async load(profileId = this.id()): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      const id = this.route.snapshot.params['id'];
-      if (!id) throw new Error('id inválido');
-      const [p, ph] = await Promise.all([
-        firstValueFrom(this.profileApi.byUser(id)),
-        firstValueFrom(this.mediaApi.forUser(id)).catch(() => [])
+      if (!profileId) throw new Error('invalid profile');
+      const [profile, photos] = await Promise.all([
+        firstValueFrom(this.profileApi.byUser(profileId)),
+        firstValueFrom(this.mediaApi.forUser(profileId)).catch(() => [] as PhotoView[])
       ]);
-      this.profile.set(p);
-      this.photos.set(ph);
+      this.profile.set(profile);
+      this.photos.set(photos);
     } catch {
-      this.error.set('Não foi possível carregar este perfil.');
+      this.error.set('Este perfil pode ter sido removido ou estar temporariamente indisponível.');
     } finally {
       this.loading.set(false);
     }
   }
 
   goBack(): void {
-    try { this.router.navigate(['/app/discover']); } catch {}
+    void this.router.navigate(['/app/discover']);
   }
 
   async onBlock(): Promise<void> {
-    const id = this.profile()?.userId;
-    if (!id) return;
+    const userId = this.profile()?.userId;
+    if (!userId) return;
+    const confirmed = typeof globalThis.confirm === 'function'
+      ? globalThis.confirm('Bloquear este perfil? Vocês deixarão de aparecer um para o outro.')
+      : true;
+    if (!confirmed) return;
     try {
-      await firstValueFrom(this.safetyApi.block(id));
+      await firstValueFrom(this.safetyApi.block(userId));
       await this.router.navigate(['/app/discover']);
-    } catch {}
+    } catch {
+      this.error.set('Não foi possível bloquear este perfil agora.');
+    }
   }
 
   async onReport(): Promise<void> {
-    const id = this.profile()?.userId;
-    if (!id || !this.reportReason) return;
+    const userId = this.profile()?.userId;
+    if (!userId || !this.reportReason || this.reportSubmitting()) return;
     this.reportSubmitting.set(true);
     try {
-      await firstValueFrom(this.safetyApi.report(id, this.reportReason, this.reportDetails));
+      await firstValueFrom(this.safetyApi.report(userId, this.reportReason, this.reportDetails));
       this.showReportDialog.set(false);
+      this.reportReason = '';
+      this.reportDetails = '';
+    } catch {
+      this.error.set('Não foi possível enviar a denúncia agora.');
     } finally {
       this.reportSubmitting.set(false);
     }
