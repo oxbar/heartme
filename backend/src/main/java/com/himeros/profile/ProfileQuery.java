@@ -1,2 +1,39 @@
-package com.himeros.profile; import java.util.*;
-public interface ProfileQuery { Optional<ProfileView> find(UUID userId); List<ProfileView> candidatePool(UUID excluding,int limit); record ProfileView(UUID userId,String displayName,String bio,java.time.LocalDate birthDate,Gender gender,BodyType bodyType,String city,String state,String country,Double latitude,Double longitude,int minAge,int maxAge,int maxDistanceKm,boolean strictAge,boolean strictDistance,boolean discoverable,boolean recentlyActiveFirst,boolean globalMode,Set<String> interests,Set<Gender> lookingFor,Set<BodyType> preferredBodyTypes){} }
+package com.himeros.profile;
+
+import java.time.Instant;
+import java.util.*;
+
+public interface ProfileQuery {
+    Optional<ProfileView> find(UUID userId);
+    List<ProfileView> findMany(Collection<UUID> userIds);
+    List<ProfileView> candidatePool(UUID excluding, int limit);
+    List<ProfileView> candidatePool(UUID excluding, Double latitude, Double longitude, Integer radiusKm, boolean globalMode, int limit);
+
+    record ProfileView(
+        UUID userId,
+        String displayName,
+        String bio,
+        java.time.LocalDate birthDate,
+        Gender gender,
+        BodyType bodyType,
+        String city,
+        String state,
+        String country,
+        Double latitude,
+        Double longitude,
+        int minAge,
+        int maxAge,
+        int maxDistanceKm,
+        boolean strictAge,
+        boolean strictDistance,
+        boolean discoverable,
+        boolean recentlyActiveFirst,
+        boolean globalMode,
+        Set<String> interests,
+        Set<Gender> lookingFor,
+        Set<BodyType> preferredBodyTypes,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant lastActiveAt
+    ) {}
+}

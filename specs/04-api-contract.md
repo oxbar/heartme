@@ -62,10 +62,12 @@ Values: `MAN | WOMAN | NON_BINARY | OTHER` (sent in profile `gender` and in `loo
 ## Discovery / interactions
 
 - `GET /discovery?limit=20`
-  - filters candidates using the current viewer's `lookingFor`, strict age/distance and preferred body-type settings;
+  - hard filters use the current viewer's `lookingFor`, explicit strict age/distance, safety state, match state and cooldown state;
+  - `preferredBodyTypes`, non-strict age/distance, interests, activity and behavioral affinity are ranking features rather than hard exclusions;
   - `globalMode=true` bypasses the viewer's strict distance radius;
   - the candidate's private discovery preferences are not reverse-applied to the viewer's feed;
-  - candidate must still be `discoverable=true`, not blocked either way and not already seen by the viewer.
+  - candidate must still be `discoverable=true` and not blocked/reported by the viewer;
+  - past interactions re-enter after configurable cooldowns instead of being permanently hidden by `seen`.
 - `POST /interactions/{targetUserId}`
 
 ```json
@@ -131,3 +133,12 @@ Plans:
 - breaking HTTP changes require `/v2` or a migration plan;
 - event schema breaking changes require a new event type/schema version;
 - CI should diff OpenAPI and event schemas before merge.
+
+### Discovery Engine V2
+
+- `GET /discovery/page?limit=20&cursor=<opaque>` — cursor page with `items`, `nextCursor`, `poolSize`, `eligibleCount`.
+- `POST /discovery/{candidateId}/view` — impression signal; never overwrites a stronger LIKE/PASS/SUPER_LIKE interaction.
+- `GET /discovery/explain/{candidateId}` — returns eligibility reason, cooldown, normalized ranking features, active weights and final score.
+- `PASS`/`VIEW` are cooldown-based instead of permanent `seen` exclusions.
+- active matches are excluded; unmatched profiles use a configurable cooldown.
+- soft preferences rank candidates; only explicit strict/safety rules hard-filter them.

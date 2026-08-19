@@ -101,6 +101,8 @@ export class DiscoverPage implements OnInit {
   readonly recommendations = signal<Recommendation[]>([]);
   readonly photosByUser = signal<Record<string, PhotoView[]>>({});
   readonly actionPending = signal(false);
+  readonly nextCursor = signal<string | null>(null);
+  private readonly viewedThisSession = new Set<string>();
 
   readonly activeRecommendation = computed(() => this.recommendations()[0] ?? null);
   readonly nextRecommendation = computed(() => this.recommendations()[1] ?? null);
@@ -147,14 +149,16 @@ export class DiscoverPage implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      const data = await firstValueFrom(this.api.discover(24));
-      this.recommendations.set(data);
-      const ids = data.map(item => item.profile.userId);
+      const page = await firstValueFrom(this.api.discoverPage(24));
+      this.recommendations.set(page.items);
+      this.nextCursor.set(page.nextCursor);
+      const ids = page.items.map(item => item.profile.userId);
       if (ids.length) {
         this.photosByUser.set(await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})));
       } else {
         this.photosByUser.set({});
       }
+      void this.markActiveViewed();
     } catch {
       this.error.set('Verifique sua conexão e tente novamente.');
     } finally {
@@ -181,12 +185,39 @@ export class DiscoverPage implements OnInit {
     return recommendation.profile.city;
   }
 
+
+  private async markActiveViewed(): Promise<void> {
+    const userId = this.activeRecommendation()?.profile.userId;
+    if (!userId || this.viewedThisSession.has(userId)) return;
+    this.viewedThisSession.add(userId);
+    await firstValueFrom(this.api.markViewed(userId)).catch(() => undefined);
+  }
+
+  private async loadMore(): Promise<void> {
+    const cursor = this.nextCursor();
+    if (!cursor) return;
+    const page = await firstValueFrom(this.api.discoverPage(24, cursor)).catch(() => null);
+    if (!page) return;
+    this.nextCursor.set(page.nextCursor);
+    const existing = new Set(this.recommendations().map(item => item.profile.userId));
+    const fresh = page.items.filter(item => !existing.has(item.profile.userId));
+    if (!fresh.length) return;
+    this.recommendations.update(list => [...list, ...fresh]);
+    const photoIds = fresh.map(item => item.profile.userId);
+    const photos = await firstValueFrom(this.mediaApi.batch(photoIds)).catch(() => ({}));
+    this.photosByUser.update(current => ({ ...current, ...photos }));
+  }
+
   async onInteract(userId: string, type: 'LIKE' | 'PASS' | 'SUPER_LIKE'): Promise<void> {
     if (this.actionPending()) return;
     this.actionPending.set(true);
     try {
       await firstValueFrom(this.api.interact(userId, type));
       this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
+      void this.markActiveViewed();
+      if (this.recommendations().length <= 5 && this.nextCursor()) {
+        await this.loadMore();
+      }
     } catch {
       this.error.set('Não foi possível registrar essa ação. Tente novamente.');
     } finally {

@@ -68,6 +68,26 @@ export interface Recommendation {
   distanceKm: number | null;
 }
 
+export interface RecommendationPage {
+  items: Recommendation[];
+  nextCursor: string | null;
+  poolSize: number;
+  eligibleCount: number;
+}
+
+export interface RecommendationExplanation {
+  candidateId: string;
+  eligible: boolean;
+  excludedBy: string;
+  score: number | null;
+  distanceKm: number | null;
+  features: Record<string, number>;
+  weights: Record<string, number>;
+  commonInterests: string[];
+  cooldownUntil: string | null;
+  coldStart: boolean;
+}
+
 export interface MatchView {
   id: string;
   userA: string;

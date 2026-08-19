@@ -94,3 +94,7 @@ These are design targets, not current benchmark claims.
 - A match is mutual consent, not simply two independent rows.
 - Premium is an entitlement domain; UI visibility must never be the authorization mechanism.
 - Design for future extraction, deploy according to demonstrated need.
+
+### Discovery Engine V2
+
+Discovery uses geo-aware candidate retrieval, hard eligibility, weighted feature ranking, behavioral soft preferences, cooldown-based re-entry, diversification, exploration, cursor pagination, Redis pool caching and explainability. See `specs/11-discovery-engine-v2.md`.

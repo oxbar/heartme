@@ -1,0 +1,3190 @@
+diff --git a/.env.example b/.env.example
+index 0a4c849..4481690 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1 +1,21 @@
+ JWT_SECRET=replace-with-at-least-32-random-bytes
++
++# Discovery Engine V2
++HIMEROS_DISCOVERY_POOL_SIZE=1000
++HIMEROS_DISCOVERY_POOL_MULTIPLIER=20
++HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM=250
++HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM=1000
++HIMEROS_DISCOVERY_CACHE_TTL=45s
++HIMEROS_DISCOVERY_VIEW_COOLDOWN=24h
++HIMEROS_DISCOVERY_PASS_COOLDOWN=14d
++HIMEROS_DISCOVERY_LIKE_COOLDOWN=30d
++HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN=30d
++HIMEROS_DISCOVERY_UNMATCH_COOLDOWN=90d
++HIMEROS_DISCOVERY_COLD_START_INTERACTIONS=20
++HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT=200
++HIMEROS_DISCOVERY_NEW_PROFILE_DAYS=7
++HIMEROS_DISCOVERY_NEW_PROFILE_SHARE=0.10
++HIMEROS_DISCOVERY_EXPLORATION_SHARE=0.05
++HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY=0.12
++# Local/dev diagnostics only; keep false in production.
++HIMEROS_DISCOVERY_EXPLAIN_ENABLED=true
+diff --git a/backend/.env.example b/backend/.env.example
+index c862075..ffd625d 100755
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -4,3 +4,23 @@ POSTGRES_PASSWORD=himeros_dev
+ JWT_SECRET=change-me-change-me-change-me-change-me
+ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4200
+ MEDIA_DIR=./data/media
++
++# Discovery Engine V2
++HIMEROS_DISCOVERY_POOL_SIZE=1000
++HIMEROS_DISCOVERY_POOL_MULTIPLIER=20
++HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM=250
++HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM=1000
++HIMEROS_DISCOVERY_CACHE_TTL=45s
++HIMEROS_DISCOVERY_VIEW_COOLDOWN=24h
++HIMEROS_DISCOVERY_PASS_COOLDOWN=14d
++HIMEROS_DISCOVERY_LIKE_COOLDOWN=30d
++HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN=30d
++HIMEROS_DISCOVERY_UNMATCH_COOLDOWN=90d
++HIMEROS_DISCOVERY_COLD_START_INTERACTIONS=20
++HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT=200
++HIMEROS_DISCOVERY_NEW_PROFILE_DAYS=7
++HIMEROS_DISCOVERY_NEW_PROFILE_SHARE=0.10
++HIMEROS_DISCOVERY_EXPLORATION_SHARE=0.05
++HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY=0.12
++# Local/dev diagnostics only; keep false in production.
++HIMEROS_DISCOVERY_EXPLAIN_ENABLED=true
+diff --git a/backend/docker-compose.yml b/backend/docker-compose.yml
+index 8b44510..e1ad42b 100755
+--- a/backend/docker-compose.yml
++++ b/backend/docker-compose.yml
+@@ -1,6 +1,8 @@
+ services:
+   postgres:
+-    image: postgres:17-alpine
++    build:
++      context: ../docker/postgres
++    image: himeros-postgres-postgis:17
+     environment:
+       POSTGRES_DB: ${POSTGRES_DB:-himeros}
+       POSTGRES_USER: ${POSTGRES_USER:-himeros}
+@@ -57,6 +59,23 @@ services:
+       HIMEROS_SECURITY_JWT_SECRET: ${JWT_SECRET:-change-me-change-me-change-me-change-me}
+       HIMEROS_CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:4200}
+       HIMEROS_MEDIA_DIRECTORY: /app/data/media
++      HIMEROS_DISCOVERY_POOL_SIZE: ${HIMEROS_DISCOVERY_POOL_SIZE:-1000}
++      HIMEROS_DISCOVERY_POOL_MULTIPLIER: ${HIMEROS_DISCOVERY_POOL_MULTIPLIER:-20}
++      HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM: ${HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM:-250}
++      HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM: ${HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM:-1000}
++      HIMEROS_DISCOVERY_CACHE_TTL: ${HIMEROS_DISCOVERY_CACHE_TTL:-45s}
++      HIMEROS_DISCOVERY_VIEW_COOLDOWN: ${HIMEROS_DISCOVERY_VIEW_COOLDOWN:-24h}
++      HIMEROS_DISCOVERY_PASS_COOLDOWN: ${HIMEROS_DISCOVERY_PASS_COOLDOWN:-14d}
++      HIMEROS_DISCOVERY_LIKE_COOLDOWN: ${HIMEROS_DISCOVERY_LIKE_COOLDOWN:-30d}
++      HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN: ${HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN:-30d}
++      HIMEROS_DISCOVERY_UNMATCH_COOLDOWN: ${HIMEROS_DISCOVERY_UNMATCH_COOLDOWN:-90d}
++      HIMEROS_DISCOVERY_COLD_START_INTERACTIONS: ${HIMEROS_DISCOVERY_COLD_START_INTERACTIONS:-20}
++      HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT: ${HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT:-200}
++      HIMEROS_DISCOVERY_NEW_PROFILE_DAYS: ${HIMEROS_DISCOVERY_NEW_PROFILE_DAYS:-7}
++      HIMEROS_DISCOVERY_NEW_PROFILE_SHARE: ${HIMEROS_DISCOVERY_NEW_PROFILE_SHARE:-0.10}
++      HIMEROS_DISCOVERY_EXPLORATION_SHARE: ${HIMEROS_DISCOVERY_EXPLORATION_SHARE:-0.05}
++      HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY: ${HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY:-0.12}
++      HIMEROS_DISCOVERY_EXPLAIN_ENABLED: ${HIMEROS_DISCOVERY_EXPLAIN_ENABLED:-true}
+     ports: ["8080:8080"]
+     volumes: ["media_data:/app/data/media"]
+     depends_on:
+diff --git a/backend/src/main/java/com/himeros/interaction/Interaction.java b/backend/src/main/java/com/himeros/interaction/Interaction.java
+index 36dc71a..88f2d96 100755
+--- a/backend/src/main/java/com/himeros/interaction/Interaction.java
++++ b/backend/src/main/java/com/himeros/interaction/Interaction.java
+@@ -1,3 +1,3 @@
+ package com.himeros.interaction;
+ import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+-@Entity @Table(name="interactions") class Interaction {enum Type{LIKE,PASS,SUPER_LIKE}@Id private UUID id;@Column(name="actor_id",nullable=false)private UUID actorId;@Column(name="target_id",nullable=false)private UUID targetId;@Enumerated(EnumType.STRING)@Column(nullable=false)private Type type;@Column(name="created_at",nullable=false)private Instant createdAt;protected Interaction(){}Interaction(UUID a,UUID t,Type type){this.id=UUID.randomUUID();this.actorId=a;this.targetId=t;this.type=type;this.createdAt=Instant.now();}void change(Type t){this.type=t;this.createdAt=Instant.now();}Type type(){return type;}}
++@Entity @Table(name="interactions") class Interaction {enum Type{VIEW,LIKE,PASS,SUPER_LIKE}@Id private UUID id;@Column(name="actor_id",nullable=false)private UUID actorId;@Column(name="target_id",nullable=false)private UUID targetId;@Enumerated(EnumType.STRING)@Column(nullable=false)private Type type;@Column(name="created_at",nullable=false)private Instant createdAt;protected Interaction(){}Interaction(UUID a,UUID t,Type type){this.id=UUID.randomUUID();this.actorId=a;this.targetId=t;this.type=type;this.createdAt=Instant.now();}void change(Type t){this.type=t;this.createdAt=Instant.now();}Type type(){return type;}UUID targetId(){return targetId;}Instant createdAt(){return createdAt;}}
+diff --git a/backend/src/main/java/com/himeros/interaction/InteractionQuery.java b/backend/src/main/java/com/himeros/interaction/InteractionQuery.java
+index e8e299a..8baf594 100755
+--- a/backend/src/main/java/com/himeros/interaction/InteractionQuery.java
++++ b/backend/src/main/java/com/himeros/interaction/InteractionQuery.java
+@@ -1 +1,14 @@
+-package com.himeros.interaction; import java.util.*; public interface InteractionQuery { boolean hasSeen(UUID actor,UUID target); Set<UUID> seenBy(UUID actor); }
+\ No newline at end of file
++package com.himeros.interaction;
++
++import java.time.Instant;
++import java.util.*;
++
++public interface InteractionQuery {
++    boolean hasSeen(UUID actor, UUID target);
++    Set<UUID> seenBy(UUID actor);
++    Optional<InteractionView> find(UUID actor, UUID target);
++    List<InteractionView> recentBy(UUID actor, int limit);
++    Map<UUID, InteractionView> latestBy(UUID actor, Collection<UUID> targets);
++
++    record InteractionView(UUID targetId, String type, Instant createdAt) {}
++}
+diff --git a/backend/src/main/java/com/himeros/interaction/InteractionRepository.java b/backend/src/main/java/com/himeros/interaction/InteractionRepository.java
+index d793911..3c46f56 100755
+--- a/backend/src/main/java/com/himeros/interaction/InteractionRepository.java
++++ b/backend/src/main/java/com/himeros/interaction/InteractionRepository.java
+@@ -1,7 +1,22 @@
+ package com.himeros.interaction;
+-import java.util.*; import org.springframework.data.jpa.repository.*; import org.springframework.data.repository.query.Param;
+-interface InteractionRepository extends JpaRepository<Interaction,UUID>{
+- Optional<Interaction> findByActorIdAndTargetId(UUID actor,UUID target);
+- boolean existsByActorIdAndTargetIdAndTypeIn(UUID actor,UUID target,Collection<Interaction.Type> types);
+- @Query("select i.targetId from Interaction i where i.actorId=:actorId") Set<UUID> targets(@Param("actorId") UUID actorId);
++
++import java.util.*;
++import org.springframework.data.domain.Pageable;
++import org.springframework.data.jpa.repository.*;
++import org.springframework.data.repository.query.Param;
++
++interface InteractionRepository extends JpaRepository<Interaction, UUID> {
++    Optional<Interaction> findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(UUID actor, UUID target);
++    @Query("select distinct i.targetId from Interaction i where i.actorId=:actorId")
++    Set<UUID> targets(@Param("actorId") UUID actorId);
++    List<Interaction> findByActorIdOrderByCreatedAtDesc(UUID actorId, Pageable pageable);
++
++    @Query(value = """
++        select distinct on (target_id) i.*
++        from interactions i
++        where i.actor_id = :actorId
++          and i.target_id in (:targetIds)
++        order by i.target_id, i.created_at desc
++        """, nativeQuery = true)
++    List<Interaction> latestForTargets(@Param("actorId") UUID actorId, @Param("targetIds") Collection<UUID> targetIds);
+ }
+diff --git a/backend/src/main/java/com/himeros/interaction/InteractionService.java b/backend/src/main/java/com/himeros/interaction/InteractionService.java
+index 50577ce..163ecc4 100755
+--- a/backend/src/main/java/com/himeros/interaction/InteractionService.java
++++ b/backend/src/main/java/com/himeros/interaction/InteractionService.java
+@@ -1,6 +1,88 @@
+ package com.himeros.interaction;
+-import com.himeros.identity.IdentityLookup;import com.himeros.shared.*;import com.himeros.shared.outbox.OutboxService;import java.util.*;import org.springframework.context.ApplicationEventPublisher;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;
+-@Service public class InteractionService implements InteractionQuery {private final InteractionRepository repo;private final IdentityLookup identity;private final ApplicationEventPublisher events;private final OutboxService outbox;public InteractionService(InteractionRepository repo,IdentityLookup identity,ApplicationEventPublisher events,OutboxService outbox){this.repo=repo;this.identity=identity;this.events=events;this.outbox=outbox;}
+- @Transactional public Result interact(UUID actor,UUID target,String rawType){if(actor.equals(target))throw new IllegalArgumentException("Cannot interact with yourself");if(!identity.exists(target))throw new ResourceNotFoundException("Target user not found");Interaction.Type type=Interaction.Type.valueOf(rawType.toUpperCase());Interaction i=repo.findByActorIdAndTargetId(actor,target).orElseGet(()->new Interaction(actor,target,type));i.change(type);repo.save(i);boolean mutual=false;if(type==Interaction.Type.LIKE||type==Interaction.Type.SUPER_LIKE){mutual=repo.existsByActorIdAndTargetIdAndTypeIn(target,actor,List.of(Interaction.Type.LIKE,Interaction.Type.SUPER_LIKE));if(mutual)events.publishEvent(new MutualLikeDetected(actor,target));}outbox.append("Interaction",actor+":"+target,"himeros.interaction.created.v1","himeros.interaction.events.v1",actor,Map.of("actorId",actor,"targetId",target,"type",type.name(),"mutual",mutual));return new Result(type.name(),mutual);}
+- @Override @Transactional(readOnly=true) public boolean hasSeen(UUID actor,UUID target){return repo.findByActorIdAndTargetId(actor,target).isPresent();}@Override @Transactional(readOnly=true) public Set<UUID> seenBy(UUID actor){return repo.targets(actor);}public record Result(String type,boolean mutualLike){}
++
++import com.himeros.identity.IdentityLookup;
++import com.himeros.shared.*;
++import com.himeros.shared.outbox.OutboxService;
++import java.time.Duration;
++import java.time.Instant;
++import java.util.*;
++import org.springframework.context.ApplicationEventPublisher;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++@Service
++public class InteractionService implements InteractionQuery {
++    private final InteractionRepository repo;
++    private final IdentityLookup identity;
++    private final ApplicationEventPublisher events;
++    private final OutboxService outbox;
++    private final DiscoveryCooldownProperties cooldowns;
++
++    public InteractionService(InteractionRepository repo, IdentityLookup identity, ApplicationEventPublisher events,
++            OutboxService outbox, DiscoveryCooldownProperties cooldowns) {
++        this.repo = repo; this.identity = identity; this.events = events; this.outbox = outbox; this.cooldowns = cooldowns;
++    }
++
++    @Transactional
++    public Result interact(UUID actor, UUID target, String rawType) {
++        if (actor.equals(target)) throw new IllegalArgumentException("Cannot interact with yourself");
++        if (!identity.exists(target)) throw new ResourceNotFoundException("Target user not found");
++        Interaction.Type type = Interaction.Type.valueOf(rawType.toUpperCase());
++        if (type == Interaction.Type.VIEW) throw new IllegalArgumentException("Use discovery view endpoint");
++
++        repo.save(new Interaction(actor, target, type));
++        boolean mutual = false;
++        if (type == Interaction.Type.LIKE || type == Interaction.Type.SUPER_LIKE) {
++            mutual = repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(target, actor)
++                .map(other -> other.type() == Interaction.Type.LIKE || other.type() == Interaction.Type.SUPER_LIKE)
++                .orElse(false);
++            if (mutual) events.publishEvent(new MutualLikeDetected(actor, target));
++        }
++        outbox.append("Interaction", actor + ":" + target, "himeros.interaction.created.v1", "himeros.interaction.events.v1", actor,
++            Map.of("actorId", actor, "targetId", target, "type", type.name(), "mutual", mutual));
++        return new Result(type.name(), mutual);
++    }
++
++    @Transactional
++    public void recordView(UUID actor, UUID target) {
++        if (actor.equals(target)) return;
++        if (!identity.exists(target)) throw new ResourceNotFoundException("Target user not found");
++        Instant now = Instant.now();
++        Optional<Interaction> latest = repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target);
++        if (latest.isPresent()) {
++            Interaction previous = latest.get();
++            Duration activeCooldown = cooldowns.forType(previous.type().name());
++            if (!activeCooldown.isZero() && now.isBefore(previous.createdAt().plus(activeCooldown))) return;
++        }
++        repo.save(new Interaction(actor, target, Interaction.Type.VIEW));
++    }
++
++    @Override @Transactional(readOnly = true)
++    public boolean hasSeen(UUID actor, UUID target) { return repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target).isPresent(); }
++
++    @Override @Transactional(readOnly = true)
++    public Set<UUID> seenBy(UUID actor) { return repo.targets(actor); }
++
++    @Override @Transactional(readOnly = true)
++    public Optional<InteractionView> find(UUID actor, UUID target) {
++        return repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target).map(InteractionService::view);
++    }
++
++    @Override @Transactional(readOnly = true)
++    public List<InteractionView> recentBy(UUID actor, int limit) {
++        return repo.findByActorIdOrderByCreatedAtDesc(actor, PageRequest.of(0, Math.max(1, Math.min(limit, 1000))))
++            .stream().map(InteractionService::view).toList();
++    }
++
++    @Override @Transactional(readOnly = true)
++    public Map<UUID, InteractionView> latestBy(UUID actor, Collection<UUID> targets) {
++        if (targets == null || targets.isEmpty()) return Map.of();
++        Map<UUID, InteractionView> result = new HashMap<>();
++        for (Interaction interaction : repo.latestForTargets(actor, targets)) result.put(interaction.targetId(), view(interaction));
++        return Map.copyOf(result);
++    }
++
++    private static InteractionView view(Interaction i) { return new InteractionView(i.targetId(), i.type().name(), i.createdAt()); }
++    public record Result(String type, boolean mutualLike) {}
+ }
+diff --git a/backend/src/main/java/com/himeros/match/Match.java b/backend/src/main/java/com/himeros/match/Match.java
+index 46fe7af..7e23a9d 100755
+--- a/backend/src/main/java/com/himeros/match/Match.java
++++ b/backend/src/main/java/com/himeros/match/Match.java
+@@ -1 +1 @@
+-package com.himeros.match;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="matches")class Match{@Id private UUID id;@Column(name="user_a",nullable=false)private UUID userA;@Column(name="user_b",nullable=false)private UUID userB;@Enumerated(EnumType.STRING)@Column(nullable=false)private Status status;@Column(name="created_at",nullable=false)private Instant createdAt;@Column(name="unmatched_at")private Instant unmatchedAt;enum Status{ACTIVE,UNMATCHED}protected Match(){}Match(UUID a,UUID b){this.id=UUID.randomUUID();if(a.toString().compareTo(b.toString())<0){userA=a;userB=b;}else{userA=b;userB=a;}status=Status.ACTIVE;createdAt=Instant.now();}UUID id(){return id;}UUID a(){return userA;}UUID b(){return userB;}Status status(){return status;}Instant createdAt(){return createdAt;}void unmatch(){status=Status.UNMATCHED;unmatchedAt=Instant.now();}}
++package com.himeros.match;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="matches")class Match{@Id private UUID id;@Column(name="user_a",nullable=false)private UUID userA;@Column(name="user_b",nullable=false)private UUID userB;@Enumerated(EnumType.STRING)@Column(nullable=false)private Status status;@Column(name="created_at",nullable=false)private Instant createdAt;@Column(name="unmatched_at")private Instant unmatchedAt;enum Status{ACTIVE,UNMATCHED}protected Match(){}Match(UUID a,UUID b){this.id=UUID.randomUUID();if(a.toString().compareTo(b.toString())<0){userA=a;userB=b;}else{userA=b;userB=a;}status=Status.ACTIVE;createdAt=Instant.now();}UUID id(){return id;}UUID a(){return userA;}UUID b(){return userB;}Status status(){return status;}Instant createdAt(){return createdAt;}Instant unmatchedAt(){return unmatchedAt;}void unmatch(){status=Status.UNMATCHED;unmatchedAt=Instant.now();}void reactivate(){status=Status.ACTIVE;unmatchedAt=null;createdAt=Instant.now();}}
+diff --git a/backend/src/main/java/com/himeros/match/MatchQuery.java b/backend/src/main/java/com/himeros/match/MatchQuery.java
+new file mode 100644
+index 0000000..743500e
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/match/MatchQuery.java
+@@ -0,0 +1,11 @@
++package com.himeros.match;
++
++import java.time.Instant;
++import java.util.*;
++
++public interface MatchQuery {
++    Set<UUID> activeCounterparts(UUID userId);
++    Set<UUID> unmatchedSince(UUID userId, Instant since);
++    List<MatchSignal> behaviorSignals(UUID userId, int limit);
++    record MatchSignal(UUID targetId, String type, Instant occurredAt) {}
++}
+diff --git a/backend/src/main/java/com/himeros/match/MatchRepository.java b/backend/src/main/java/com/himeros/match/MatchRepository.java
+index d8a309b..de9e829 100755
+--- a/backend/src/main/java/com/himeros/match/MatchRepository.java
++++ b/backend/src/main/java/com/himeros/match/MatchRepository.java
+@@ -1,6 +1,8 @@
+ package com.himeros.match;
+ 
++import java.time.Instant;
+ import java.util.*;
++import org.springframework.data.domain.Pageable;
+ import org.springframework.data.jpa.repository.*;
+ import org.springframework.data.repository.query.Param;
+ 
+@@ -8,4 +10,15 @@ interface MatchRepository extends JpaRepository<Match,UUID> {
+     @Query("select m from Match m where m.userA=:u or m.userB=:u order by m.createdAt desc")
+     List<Match> findForUser(@Param("u") UUID u);
+     Optional<Match> findByUserAAndUserB(UUID a,UUID b);
++
++    @Query("select case when m.userA=:u then m.userB else m.userA end from Match m " +
++           "where (m.userA=:u or m.userB=:u) and m.status=:status")
++    List<UUID> counterpartsByStatus(@Param("u") UUID u, @Param("status") Match.Status status);
++
++    @Query("select case when m.userA=:u then m.userB else m.userA end from Match m " +
++           "where (m.userA=:u or m.userB=:u) and m.status=:status and m.unmatchedAt>:since")
++    List<UUID> unmatchedCounterpartsSince(@Param("u") UUID u, @Param("status") Match.Status status, @Param("since") Instant since);
++
++    @Query("select m from Match m where m.userA=:u or m.userB=:u order by coalesce(m.unmatchedAt,m.createdAt) desc")
++    List<Match> findSignalsForUser(@Param("u") UUID u, Pageable pageable);
+ }
+diff --git a/backend/src/main/java/com/himeros/match/MatchService.java b/backend/src/main/java/com/himeros/match/MatchService.java
+index b02e611..a2a6504 100755
+--- a/backend/src/main/java/com/himeros/match/MatchService.java
++++ b/backend/src/main/java/com/himeros/match/MatchService.java
+@@ -1,9 +1,86 @@
+ package com.himeros.match;
+-import com.himeros.interaction.MutualLikeDetected;import com.himeros.shared.*;import com.himeros.shared.outbox.OutboxService;import java.time.Instant;import java.util.*;import org.springframework.context.ApplicationEventPublisher;import org.springframework.context.event.EventListener;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;
+-@Service public class MatchService {private final MatchRepository repo;private final OutboxService outbox;private final ApplicationEventPublisher events;public MatchService(MatchRepository repo,OutboxService outbox,ApplicationEventPublisher events){this.repo=repo;this.outbox=outbox;this.events=events;}
+- @EventListener public void on(MutualLikeDetected e){create(e.userA(),e.userB());}
+- @Transactional public MatchView create(UUID x,UUID y){UUID a=x.toString().compareTo(y.toString())<0?x:y,b=a.equals(x)?y:x;Optional<Match> existing=repo.findByUserAAndUserB(a,b);if(existing.isPresent())return view(existing.get());Match m=repo.save(new Match(a,b));MatchCreated event=new MatchCreated(m.id(),m.a(),m.b(),Instant.now());events.publishEvent(event);outbox.append("Match",m.id(),"himeros.match.created.v1","himeros.match.events.v1",m.id(),event);return view(m);}
+- @Transactional(readOnly=true) public List<MatchView> list(UUID user){return repo.findForUser(user).stream().map(MatchService::view).toList();}
+- @Transactional public void unmatch(UUID user,UUID id){Match m=repo.findById(id).orElseThrow(()->new ResourceNotFoundException("Match not found"));if(!m.a().equals(user)&&!m.b().equals(user))throw new ForbiddenException("Not your match");m.unmatch();}
+- static MatchView view(Match m){return new MatchView(m.id(),m.a(),m.b(),m.status().name(),m.createdAt());}public record MatchView(UUID id,UUID userA,UUID userB,String status,Instant createdAt){}
++
++import com.himeros.interaction.MutualLikeDetected;
++import com.himeros.shared.*;
++import com.himeros.shared.outbox.OutboxService;
++import java.time.Instant;
++import java.util.*;
++import org.springframework.context.ApplicationEventPublisher;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.context.event.EventListener;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++@Service
++public class MatchService implements MatchQuery {
++    private final MatchRepository repo;
++    private final OutboxService outbox;
++    private final ApplicationEventPublisher events;
++
++    public MatchService(MatchRepository repo, OutboxService outbox, ApplicationEventPublisher events) {
++        this.repo = repo; this.outbox = outbox; this.events = events;
++    }
++
++    @EventListener public void on(MutualLikeDetected e) { create(e.userA(), e.userB()); }
++
++    @Transactional
++    public MatchView create(UUID x, UUID y) {
++        UUID a = x.toString().compareTo(y.toString()) < 0 ? x : y, b = a.equals(x) ? y : x;
++        Optional<Match> existing = repo.findByUserAAndUserB(a, b);
++        if (existing.isPresent()) {
++            Match current = existing.get();
++            if (current.status() == Match.Status.ACTIVE) return view(current);
++            current.reactivate();
++            publishCreated(current);
++            return view(current);
++        }
++        Match m = repo.save(new Match(a, b));
++        publishCreated(m);
++        return view(m);
++    }
++
++    @Transactional(readOnly = true)
++    public List<MatchView> list(UUID user) { return repo.findForUser(user).stream().map(MatchService::view).toList(); }
++
++    @Transactional
++    public void unmatch(UUID user, UUID id) {
++        Match m = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Match not found"));
++        if (!m.a().equals(user) && !m.b().equals(user)) throw new ForbiddenException("Not your match");
++        m.unmatch();
++    }
++
++    @Override
++    @Transactional(readOnly = true)
++    public Set<UUID> activeCounterparts(UUID userId) {
++        return Set.copyOf(repo.counterpartsByStatus(userId, Match.Status.ACTIVE));
++    }
++
++    @Override
++    @Transactional(readOnly = true)
++    public Set<UUID> unmatchedSince(UUID userId, Instant since) {
++        return Set.copyOf(repo.unmatchedCounterpartsSince(userId, Match.Status.UNMATCHED, since));
++    }
++
++    @Override
++    @Transactional(readOnly = true)
++    public List<MatchSignal> behaviorSignals(UUID userId, int limit) {
++        int cap = Math.max(1, Math.min(limit, 200));
++        return repo.findSignalsForUser(userId, PageRequest.of(0, cap)).stream().map(match -> {
++            UUID target = counterpart(match, userId);
++            if (match.status() == Match.Status.UNMATCHED && match.unmatchedAt() != null)
++                return new MatchSignal(target, "UNMATCH", match.unmatchedAt());
++            return new MatchSignal(target, "MATCH", match.createdAt());
++        }).toList();
++    }
++
++
++    private void publishCreated(Match match) {
++        MatchCreated event = new MatchCreated(match.id(), match.a(), match.b(), Instant.now());
++        events.publishEvent(event);
++        outbox.append("Match", match.id(), "himeros.match.created.v1", "himeros.match.events.v1", match.id(), event);
++    }
++
++    private static UUID counterpart(Match match, UUID userId) { return match.a().equals(userId) ? match.b() : match.a(); }
++    static MatchView view(Match m) { return new MatchView(m.id(), m.a(), m.b(), m.status().name(), m.createdAt()); }
++    public record MatchView(UUID id, UUID userA, UUID userB, String status, Instant createdAt) {}
+ }
+diff --git a/backend/src/main/java/com/himeros/messaging/ConversationRepository.java b/backend/src/main/java/com/himeros/messaging/ConversationRepository.java
+index 03ed379..5e383b4 100755
+--- a/backend/src/main/java/com/himeros/messaging/ConversationRepository.java
++++ b/backend/src/main/java/com/himeros/messaging/ConversationRepository.java
+@@ -1,6 +1,7 @@
+ package com.himeros.messaging;
+ 
+ import java.util.*;
++import org.springframework.data.domain.Pageable;
+ import org.springframework.data.jpa.repository.*;
+ import org.springframework.data.repository.query.Param;
+ 
+@@ -8,4 +9,6 @@ interface ConversationRepository extends JpaRepository<Conversation,UUID> {
+     Optional<Conversation> findByMatchId(UUID matchId);
+     @Query("select c from Conversation c where c.userA=:u or c.userB=:u order by coalesce(c.lastMessageAt,c.createdAt) desc")
+     List<Conversation> findForUser(@Param("u") UUID u);
++    @Query("select c from Conversation c where c.userA=:u or c.userB=:u order by coalesce(c.lastMessageAt,c.createdAt) desc")
++    List<Conversation> findRecentForUser(@Param("u") UUID u, Pageable pageable);
+ }
+diff --git a/backend/src/main/java/com/himeros/messaging/MessageRepository.java b/backend/src/main/java/com/himeros/messaging/MessageRepository.java
+index 4490082..09c97db 100755
+--- a/backend/src/main/java/com/himeros/messaging/MessageRepository.java
++++ b/backend/src/main/java/com/himeros/messaging/MessageRepository.java
+@@ -13,6 +13,11 @@ interface MessageRepository extends JpaRepository<Message,UUID> {
+     @Query("select m from Message m where m.conversationId=:c and m.sentAt<:before order by m.sentAt desc")
+     List<Message> before(@Param("c") UUID c, @Param("before") Instant before, Pageable pageable);
+ 
++    @Query("select m.conversationId, count(m), max(m.sentAt) from Message m " +
++           "where m.conversationId in :conversationIds and m.senderId=:sender group by m.conversationId")
++    List<Object[]> engagementByConversationIds(@Param("conversationIds") Collection<UUID> conversationIds,
++                                                @Param("sender") UUID sender);
++
+     @Modifying
+     @Query("update Message m set m.readAt=CURRENT_TIMESTAMP where m.conversationId=:c and m.senderId<>:reader and m.readAt is null")
+     int markRead(@Param("c") UUID c,@Param("reader") UUID reader);
+diff --git a/backend/src/main/java/com/himeros/messaging/MessagingQuery.java b/backend/src/main/java/com/himeros/messaging/MessagingQuery.java
+new file mode 100644
+index 0000000..457d78d
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/messaging/MessagingQuery.java
+@@ -0,0 +1,9 @@
++package com.himeros.messaging;
++
++import java.time.Instant;
++import java.util.*;
++
++public interface MessagingQuery {
++    List<EngagementSignal> engagementSignals(UUID userId, int limit);
++    record EngagementSignal(UUID targetId, String type, Instant occurredAt) {}
++}
+diff --git a/backend/src/main/java/com/himeros/messaging/MessagingService.java b/backend/src/main/java/com/himeros/messaging/MessagingService.java
+index 354978d..ff5aac6 100755
+--- a/backend/src/main/java/com/himeros/messaging/MessagingService.java
++++ b/backend/src/main/java/com/himeros/messaging/MessagingService.java
+@@ -1,11 +1,12 @@
+ package com.himeros.messaging;
+ import com.himeros.match.MatchCreated;import com.himeros.shared.*;import com.himeros.shared.outbox.OutboxService;import java.time.Instant;import java.util.*;import org.springframework.data.domain.PageRequest;import org.springframework.messaging.simp.SimpMessagingTemplate;import org.springframework.context.event.EventListener;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;
+-@Service public class MessagingService {private final ConversationRepository conversations;private final MessageRepository messages;private final OutboxService outbox;private final SimpMessagingTemplate ws;public MessagingService(ConversationRepository c,MessageRepository m,OutboxService o,SimpMessagingTemplate ws){conversations=c;messages=m;outbox=o;this.ws=ws;}
++@Service public class MessagingService implements MessagingQuery {private final ConversationRepository conversations;private final MessageRepository messages;private final OutboxService outbox;private final SimpMessagingTemplate ws;public MessagingService(ConversationRepository c,MessageRepository m,OutboxService o,SimpMessagingTemplate ws){conversations=c;messages=m;outbox=o;this.ws=ws;}
+  @EventListener public void on(MatchCreated e){conversations.findByMatchId(e.matchId()).orElseGet(()->conversations.save(new Conversation(e.matchId(),e.userA(),e.userB())));}
+  @Transactional(readOnly=true) public List<ConversationView> list(UUID user){return conversations.findForUser(user).stream().map(MessagingService::view).toList();}
+  @Transactional public MessageView send(UUID user,UUID conversationId,String body){Conversation c=owned(user,conversationId);String content=body==null?"":body.trim();if(content.isBlank()||content.length()>4000)throw new IllegalArgumentException("Message must contain 1-4000 characters");Message m=messages.save(new Message(conversationId,user,content));c.touch(m.sent());MessageView result=messageView(m);outbox.append("Message",m.id(),"himeros.messaging.message-sent.v1","himeros.messaging.events.v1",conversationId,Map.of("messageId",m.id(),"conversationId",conversationId,"senderId",user));ws.convertAndSend("/topic/conversations/"+conversationId,result);return result;}
+  @Transactional(readOnly=true) public List<MessageView> history(UUID user,UUID conversationId,Instant before,int limit){owned(user,conversationId);var page=PageRequest.of(0,Math.min(Math.max(limit,1),100));return (before==null?messages.latest(conversationId,page):messages.before(conversationId,before,page)).stream().map(MessagingService::messageView).toList();}
+  @Transactional public int markRead(UUID user,UUID conversationId){owned(user,conversationId);return messages.markRead(conversationId,user);}
++ @Override @Transactional(readOnly=true) public List<MessagingQuery.EngagementSignal> engagementSignals(UUID user,int limit){List<Conversation> recent=conversations.findRecentForUser(user,PageRequest.of(0,Math.max(1,Math.min(limit,200))));if(recent.isEmpty())return List.of();Map<UUID,Object[]> engagement=new HashMap<>();for(Object[] row:messages.engagementByConversationIds(recent.stream().map(Conversation::id).toList(),user))engagement.put((UUID)row[0],row);return recent.stream().map(c->{Object[] row=engagement.get(c.id());if(row==null)return null;long count=((Number)row[1]).longValue();UUID target=c.a().equals(user)?c.b():c.a();String type=count>=3?"CONVERSATION":"MESSAGE";Instant at=(Instant)row[2];return new MessagingQuery.EngagementSignal(target,type,at);}).filter(Objects::nonNull).toList();}
+  private Conversation owned(UUID user,UUID id){Conversation c=conversations.findById(id).orElseThrow(()->new ResourceNotFoundException("Conversation not found"));if(!c.contains(user))throw new ForbiddenException("Not your conversation");return c;}
+  private static ConversationView view(Conversation c){return new ConversationView(c.id(),c.matchId(),c.a(),c.b(),c.created(),c.last());}private static MessageView messageView(Message m){return new MessageView(m.id(),m.conversation(),m.sender(),m.content(),m.sent(),m.read());}
+  public record ConversationView(UUID id,UUID matchId,UUID userA,UUID userB,Instant createdAt,Instant lastMessageAt){} public record MessageView(UUID id,UUID conversationId,UUID senderId,String content,Instant sentAt,Instant readAt){}
+diff --git a/backend/src/main/java/com/himeros/profile/Profile.java b/backend/src/main/java/com/himeros/profile/Profile.java
+index 763a193..3efcf66 100755
+--- a/backend/src/main/java/com/himeros/profile/Profile.java
++++ b/backend/src/main/java/com/himeros/profile/Profile.java
+@@ -1,16 +1,16 @@
+ package com.himeros.profile;
+-import jakarta.persistence.*; import java.time.*; import java.util.*;
++import jakarta.persistence.*; import java.time.*; import java.util.*; import org.hibernate.annotations.BatchSize;
+ @Entity @Table(name="profiles")
+ public class Profile {
+  @Id @Column(name="user_id") private UUID userId; @Column(name="display_name",nullable=false,length=80) private String displayName; @Column(length=1000) private String bio; @Column(name="birth_date",nullable=false) private LocalDate birthDate; @Enumerated(EnumType.STRING) @Column(nullable=false) private Gender gender;
+  @Enumerated(EnumType.STRING) @Column(name="body_type") private BodyType bodyType;
+  private String city; private String state; private String country; private Double latitude; private Double longitude; @Column(name="min_age",nullable=false) private int minAge; @Column(name="max_age",nullable=false) private int maxAge; @Column(name="max_distance_km",nullable=false) private int maxDistanceKm; @Column(name="strict_age",nullable=false) private boolean strictAge; @Column(name="strict_distance",nullable=false) private boolean strictDistance; @Column(nullable=false) private boolean discoverable; @Column(name="recently_active_first",nullable=false) private boolean recentlyActiveFirst; @Column(name="global_mode",nullable=false) private boolean globalMode;
+- @ElementCollection(fetch=FetchType.EAGER) @CollectionTable(name="profile_interests",joinColumns=@JoinColumn(name="user_id")) @Column(name="interest") private Set<String> interests=new HashSet<>();
+- @ElementCollection(fetch=FetchType.EAGER) @CollectionTable(name="profile_looking_for",joinColumns=@JoinColumn(name="user_id")) @Column(name="gender") @Enumerated(EnumType.STRING) private Set<Gender> lookingFor=new HashSet<>();
+- @ElementCollection(fetch=FetchType.EAGER) @CollectionTable(name="profile_preferred_body_types",joinColumns=@JoinColumn(name="user_id")) @Column(name="body_type") @Enumerated(EnumType.STRING) private Set<BodyType> preferredBodyTypes=new HashSet<>();
+- @Column(name="created_at",nullable=false) private Instant createdAt; @Column(name="updated_at",nullable=false) private Instant updatedAt;
++ @ElementCollection(fetch=FetchType.LAZY) @BatchSize(size=100) @CollectionTable(name="profile_interests",joinColumns=@JoinColumn(name="user_id")) @Column(name="interest") private Set<String> interests=new HashSet<>();
++ @ElementCollection(fetch=FetchType.LAZY) @BatchSize(size=100) @CollectionTable(name="profile_looking_for",joinColumns=@JoinColumn(name="user_id")) @Column(name="gender") @Enumerated(EnumType.STRING) private Set<Gender> lookingFor=new HashSet<>();
++ @ElementCollection(fetch=FetchType.LAZY) @BatchSize(size=100) @CollectionTable(name="profile_preferred_body_types",joinColumns=@JoinColumn(name="user_id")) @Column(name="body_type") @Enumerated(EnumType.STRING) private Set<BodyType> preferredBodyTypes=new HashSet<>();
++ @Column(name="created_at",nullable=false) private Instant createdAt; @Column(name="updated_at",nullable=false) private Instant updatedAt; @Column(name="last_active_at",nullable=false) private Instant lastActiveAt;
+  protected Profile(){}
+- public Profile(UUID userId,String displayName,LocalDate birthDate,Gender gender){this.userId=userId;this.displayName=displayName;this.birthDate=birthDate;this.gender=gender;this.minAge=18;this.maxAge=99;this.maxDistanceKm=100;this.strictAge=false;this.strictDistance=false;this.discoverable=true;this.recentlyActiveFirst=false;this.globalMode=false;this.createdAt=Instant.now();this.updatedAt=createdAt;}
+- public void update(String name,String bio,LocalDate birth,Gender gender,BodyType bodyType,String city,String state,String country,Double lat,Double lon,int minAge,int maxAge,int maxDistance,boolean strictAge,boolean strictDistance,boolean discoverable,boolean recentlyActiveFirst,boolean globalMode,Set<String> interests,Set<Gender> lookingFor,Set<BodyType> preferredBodyTypes){this.displayName=name;this.bio=bio;this.birthDate=birth;this.gender=gender;this.bodyType=bodyType;this.city=city;this.state=state;this.country=country;this.latitude=lat;this.longitude=lon;this.minAge=minAge;this.maxAge=maxAge;this.maxDistanceKm=maxDistance;this.strictAge=strictAge;this.strictDistance=strictDistance;this.discoverable=discoverable;this.recentlyActiveFirst=recentlyActiveFirst;this.globalMode=globalMode;this.interests=new HashSet<>(interests==null?Set.of():interests);this.lookingFor=new HashSet<>(lookingFor==null?Set.of():lookingFor);this.preferredBodyTypes=new HashSet<>(preferredBodyTypes==null?Set.of():preferredBodyTypes);this.updatedAt=Instant.now();}
+- public UUID getUserId(){return userId;} public String getDisplayName(){return displayName;} public String getBio(){return bio;} public LocalDate getBirthDate(){return birthDate;} public Gender getGender(){return gender;} public BodyType getBodyType(){return bodyType;} public String getCity(){return city;} public String getState(){return state;} public String getCountry(){return country;} public Double getLatitude(){return latitude;} public Double getLongitude(){return longitude;} public int getMinAge(){return minAge;} public int getMaxAge(){return maxAge;} public int getMaxDistanceKm(){return maxDistanceKm;} public boolean isStrictAge(){return strictAge;} public boolean isStrictDistance(){return strictDistance;} public boolean isDiscoverable(){return discoverable;} public boolean isRecentlyActiveFirst(){return recentlyActiveFirst;} public boolean isGlobalMode(){return globalMode;} public Set<String> getInterests(){return Set.copyOf(interests);} public Set<Gender> getLookingFor(){return Set.copyOf(lookingFor);} public Set<BodyType> getPreferredBodyTypes(){return Set.copyOf(preferredBodyTypes);}
++ public Profile(UUID userId,String displayName,LocalDate birthDate,Gender gender){this.userId=userId;this.displayName=displayName;this.birthDate=birthDate;this.gender=gender;this.minAge=18;this.maxAge=99;this.maxDistanceKm=100;this.strictAge=false;this.strictDistance=false;this.discoverable=true;this.recentlyActiveFirst=false;this.globalMode=false;this.createdAt=Instant.now();this.updatedAt=createdAt;this.lastActiveAt=createdAt;}
++ public void update(String name,String bio,LocalDate birth,Gender gender,BodyType bodyType,String city,String state,String country,Double lat,Double lon,int minAge,int maxAge,int maxDistance,boolean strictAge,boolean strictDistance,boolean discoverable,boolean recentlyActiveFirst,boolean globalMode,Set<String> interests,Set<Gender> lookingFor,Set<BodyType> preferredBodyTypes){this.displayName=name;this.bio=bio;this.birthDate=birth;this.gender=gender;this.bodyType=bodyType;this.city=city;this.state=state;this.country=country;this.latitude=lat;this.longitude=lon;this.minAge=minAge;this.maxAge=maxAge;this.maxDistanceKm=maxDistance;this.strictAge=strictAge;this.strictDistance=strictDistance;this.discoverable=discoverable;this.recentlyActiveFirst=recentlyActiveFirst;this.globalMode=globalMode;this.interests=new HashSet<>(interests==null?Set.of():interests);this.lookingFor=new HashSet<>(lookingFor==null?Set.of():lookingFor);this.preferredBodyTypes=new HashSet<>(preferredBodyTypes==null?Set.of():preferredBodyTypes);this.updatedAt=Instant.now();this.lastActiveAt=this.updatedAt;}
++ public UUID getUserId(){return userId;} public String getDisplayName(){return displayName;} public String getBio(){return bio;} public LocalDate getBirthDate(){return birthDate;} public Gender getGender(){return gender;} public BodyType getBodyType(){return bodyType;} public String getCity(){return city;} public String getState(){return state;} public String getCountry(){return country;} public Double getLatitude(){return latitude;} public Double getLongitude(){return longitude;} public int getMinAge(){return minAge;} public int getMaxAge(){return maxAge;} public int getMaxDistanceKm(){return maxDistanceKm;} public boolean isStrictAge(){return strictAge;} public boolean isStrictDistance(){return strictDistance;} public boolean isDiscoverable(){return discoverable;} public boolean isRecentlyActiveFirst(){return recentlyActiveFirst;} public boolean isGlobalMode(){return globalMode;} public Set<String> getInterests(){return Set.copyOf(interests);} public Set<Gender> getLookingFor(){return Set.copyOf(lookingFor);} public Set<BodyType> getPreferredBodyTypes(){return Set.copyOf(preferredBodyTypes);} public Instant getCreatedAt(){return createdAt;} public Instant getUpdatedAt(){return updatedAt;} public Instant getLastActiveAt(){return lastActiveAt;}
+ }
+diff --git a/backend/src/main/java/com/himeros/profile/ProfileQuery.java b/backend/src/main/java/com/himeros/profile/ProfileQuery.java
+index 156e225..657ad64 100755
+--- a/backend/src/main/java/com/himeros/profile/ProfileQuery.java
++++ b/backend/src/main/java/com/himeros/profile/ProfileQuery.java
+@@ -1,2 +1,39 @@
+-package com.himeros.profile; import java.util.*;
+-public interface ProfileQuery { Optional<ProfileView> find(UUID userId); List<ProfileView> candidatePool(UUID excluding,int limit); record ProfileView(UUID userId,String displayName,String bio,java.time.LocalDate birthDate,Gender gender,BodyType bodyType,String city,String state,String country,Double latitude,Double longitude,int minAge,int maxAge,int maxDistanceKm,boolean strictAge,boolean strictDistance,boolean discoverable,boolean recentlyActiveFirst,boolean globalMode,Set<String> interests,Set<Gender> lookingFor,Set<BodyType> preferredBodyTypes){} }
++package com.himeros.profile;
++
++import java.time.Instant;
++import java.util.*;
++
++public interface ProfileQuery {
++    Optional<ProfileView> find(UUID userId);
++    List<ProfileView> findMany(Collection<UUID> userIds);
++    List<ProfileView> candidatePool(UUID excluding, int limit);
++    List<ProfileView> candidatePool(UUID excluding, Double latitude, Double longitude, Integer radiusKm, boolean globalMode, int limit);
++
++    record ProfileView(
++        UUID userId,
++        String displayName,
++        String bio,
++        java.time.LocalDate birthDate,
++        Gender gender,
++        BodyType bodyType,
++        String city,
++        String state,
++        String country,
++        Double latitude,
++        Double longitude,
++        int minAge,
++        int maxAge,
++        int maxDistanceKm,
++        boolean strictAge,
++        boolean strictDistance,
++        boolean discoverable,
++        boolean recentlyActiveFirst,
++        boolean globalMode,
++        Set<String> interests,
++        Set<Gender> lookingFor,
++        Set<BodyType> preferredBodyTypes,
++        Instant createdAt,
++        Instant updatedAt,
++        Instant lastActiveAt
++    ) {}
++}
+diff --git a/backend/src/main/java/com/himeros/profile/ProfileRepository.java b/backend/src/main/java/com/himeros/profile/ProfileRepository.java
+index a00a5a7..ada13d2 100755
+--- a/backend/src/main/java/com/himeros/profile/ProfileRepository.java
++++ b/backend/src/main/java/com/himeros/profile/ProfileRepository.java
+@@ -1,3 +1,44 @@
+ package com.himeros.profile;
+-import java.util.*; import org.springframework.data.domain.*; import org.springframework.data.jpa.repository.JpaRepository;
+-interface ProfileRepository extends JpaRepository<Profile,UUID>{ Page<Profile> findByDiscoverableTrueAndUserIdNot(UUID userId,Pageable pageable); }
++
++import java.util.*;
++import org.springframework.data.domain.*;
++import org.springframework.data.jpa.repository.*;
++import org.springframework.data.repository.query.Param;
++
++interface ProfileRepository extends JpaRepository<Profile, UUID> {
++    Page<Profile> findByDiscoverableTrueAndUserIdNot(UUID userId, Pageable pageable);
++
++    @Modifying
++    @Query("update Profile p set p.lastActiveAt=:at where p.userId=:userId and (p.lastActiveAt is null or p.lastActiveAt<:threshold)")
++    int touchActivity(@Param("userId") UUID userId, @Param("at") java.time.Instant at, @Param("threshold") java.time.Instant threshold);
++
++    @Query(value = """
++        select p.*
++        from profiles p
++        where p.discoverable = true
++          and p.user_id <> :userId
++          and (
++            :globalMode = true
++            or :radiusKm is null
++            or :latitude is null
++            or :longitude is null
++            or p.latitude is null
++            or p.longitude is null
++            or ST_DWithin(
++                ST_SetSRID(ST_MakePoint(p.longitude, p.latitude), 4326)::geography,
++                ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
++                (:radiusKm * 1000.0)
++            )
++          )
++        order by p.last_active_at desc nulls last, p.updated_at desc, p.user_id
++        limit :limit
++        """, nativeQuery = true)
++    List<Profile> findDiscoveryCandidates(
++        @Param("userId") UUID userId,
++        @Param("latitude") Double latitude,
++        @Param("longitude") Double longitude,
++        @Param("radiusKm") Integer radiusKm,
++        @Param("globalMode") boolean globalMode,
++        @Param("limit") int limit
++    );
++}
+diff --git a/backend/src/main/java/com/himeros/profile/ProfileService.java b/backend/src/main/java/com/himeros/profile/ProfileService.java
+index 3d4ce5c..002e3be 100755
+--- a/backend/src/main/java/com/himeros/profile/ProfileService.java
++++ b/backend/src/main/java/com/himeros/profile/ProfileService.java
+@@ -2,6 +2,8 @@ package com.himeros.profile;
+ 
+ import com.himeros.shared.outbox.*;
+ import com.himeros.identity.*;
++import com.himeros.shared.UserActivityObserved;
++import org.springframework.context.event.EventListener;
+ import org.springframework.transaction.annotation.Transactional;
+ import java.util.*;
+ import org.springframework.data.domain.PageRequest;
+@@ -28,14 +30,11 @@ public class ProfileService implements ProfileQuery {
+ 
+     @Transactional
+     public ProfileView upsert(UUID userId, UpsertCommand c) {
+-        if (!identity.exists(userId))
+-            throw new IllegalArgumentException("Unknown user " + userId);
++        if (!identity.exists(userId)) throw new IllegalArgumentException("Unknown user " + userId);
+         if (java.time.Period.between(c.birthDate(), java.time.LocalDate.now()).getYears() < 18)
+             throw new IllegalArgumentException("Must be 18+");
+-        if (c.minAge() > c.maxAge())
+-            throw new IllegalArgumentException("minAge cannot exceed maxAge");
+-        Profile p = repo.findById(userId)
+-                .orElseGet(() -> new Profile(userId, c.displayName(), c.birthDate(), c.gender()));
++        if (c.minAge() > c.maxAge()) throw new IllegalArgumentException("minAge cannot exceed maxAge");
++        Profile p = repo.findById(userId).orElseGet(() -> new Profile(userId, c.displayName(), c.birthDate(), c.gender()));
+         p.update(c.displayName(), c.bio(), c.birthDate(), c.gender(), c.bodyType(), c.city(), c.state(), c.country(),
+                 c.latitude(), c.longitude(), c.minAge(), c.maxAge(), c.maxDistanceKm(), c.strictAge(),
+                 c.strictDistance(), c.discoverable(), c.recentlyActiveFirst(), c.globalMode(), c.interests(),
+@@ -46,22 +45,41 @@ public class ProfileService implements ProfileQuery {
+ 
+     @Override
+     @Transactional(readOnly = true)
+-    public Optional<ProfileView> find(UUID id) {
+-        return repo.findById(id).map(ProfileService::view);
++    public Optional<ProfileView> find(UUID id) { return repo.findById(id).map(ProfileService::view); }
++
++    @Override
++    @Transactional(readOnly = true)
++    public List<ProfileView> findMany(Collection<UUID> ids) {
++        if (ids == null || ids.isEmpty()) return List.of();
++        return repo.findAllById(ids).stream().map(ProfileService::view).toList();
+     }
+ 
+     @Override
+     @Transactional(readOnly = true)
+     public List<ProfileView> candidatePool(UUID excluding, int limit) {
+-        return repo.findByDiscoverableTrueAndUserIdNot(excluding, PageRequest.of(0, Math.min(limit, 500))).stream()
++        return repo.findByDiscoverableTrueAndUserIdNot(excluding, PageRequest.of(0, Math.min(limit, 2000))).stream()
+                 .map(ProfileService::view).toList();
+     }
+ 
++    @Override
++    @Transactional(readOnly = true)
++    public List<ProfileView> candidatePool(UUID excluding, Double latitude, Double longitude, Integer radiusKm,
++                                           boolean globalMode, int limit) {
++        return repo.findDiscoveryCandidates(excluding, latitude, longitude, radiusKm, globalMode, Math.min(limit, 2000))
++            .stream().map(ProfileService::view).toList();
++    }
++
++    @EventListener
++    @Transactional
++    public void on(UserActivityObserved event) {
++        repo.touchActivity(event.userId(), event.at(), event.at().minusSeconds(300));
++    }
++
+     static ProfileView view(Profile p) {
+         return new ProfileView(p.getUserId(), p.getDisplayName(), p.getBio(), p.getBirthDate(), p.getGender(),
+                 p.getBodyType(), p.getCity(), p.getState(), p.getCountry(), p.getLatitude(), p.getLongitude(),
+                 p.getMinAge(), p.getMaxAge(), p.getMaxDistanceKm(), p.isStrictAge(), p.isStrictDistance(),
+                 p.isDiscoverable(), p.isRecentlyActiveFirst(), p.isGlobalMode(), p.getInterests(), p.getLookingFor(),
+-                p.getPreferredBodyTypes());
++                p.getPreferredBodyTypes(), p.getCreatedAt(), p.getUpdatedAt(), p.getLastActiveAt());
+     }
+ }
+diff --git a/backend/src/main/java/com/himeros/recommendation/BehaviorSignal.java b/backend/src/main/java/com/himeros/recommendation/BehaviorSignal.java
+new file mode 100644
+index 0000000..93a0757
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/BehaviorSignal.java
+@@ -0,0 +1,19 @@
++package com.himeros.recommendation;
++
++import java.time.Instant;
++import java.util.UUID;
++
++public record BehaviorSignal(UUID targetId, BehaviorSignalType type, Instant occurredAt) {}
++
++enum BehaviorSignalType {
++    VIEW,
++    PASS,
++    LIKE,
++    SUPER_LIKE,
++    MATCH,
++    MESSAGE,
++    CONVERSATION,
++    UNMATCH,
++    BLOCK,
++    REPORT
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/BehaviorSignalService.java b/backend/src/main/java/com/himeros/recommendation/BehaviorSignalService.java
+new file mode 100644
+index 0000000..1508589
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/BehaviorSignalService.java
+@@ -0,0 +1,31 @@
++package com.himeros.recommendation;
++
++import com.himeros.interaction.InteractionQuery;
++import com.himeros.match.MatchQuery;
++import com.himeros.messaging.MessagingQuery;
++import com.himeros.trustsafety.TrustSafetyQuery;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class BehaviorSignalService {
++    private final InteractionQuery interactions;
++    private final MatchQuery matches;
++    private final MessagingQuery messaging;
++    private final TrustSafetyQuery safety;
++
++    public BehaviorSignalService(InteractionQuery interactions, MatchQuery matches, MessagingQuery messaging, TrustSafetyQuery safety) {
++        this.interactions = interactions; this.matches = matches; this.messaging = messaging; this.safety = safety;
++    }
++
++    public List<BehaviorSignal> recent(UUID userId, int limit) {
++        int sourceLimit = Math.max(20, Math.min(limit, 500));
++        List<BehaviorSignal> signals = new ArrayList<>();
++        interactions.recentBy(userId, sourceLimit).forEach(i -> signals.add(new BehaviorSignal(i.targetId(), BehaviorSignalType.valueOf(i.type()), i.createdAt())));
++        matches.behaviorSignals(userId, sourceLimit).forEach(s -> signals.add(new BehaviorSignal(s.targetId(), BehaviorSignalType.valueOf(s.type()), s.occurredAt())));
++        messaging.engagementSignals(userId, sourceLimit).forEach(s -> signals.add(new BehaviorSignal(s.targetId(), BehaviorSignalType.valueOf(s.type()), s.occurredAt())));
++        safety.behaviorSignals(userId, sourceLimit).forEach(s -> signals.add(new BehaviorSignal(s.targetId(), BehaviorSignalType.valueOf(s.type()), s.occurredAt())));
++        signals.sort(Comparator.comparing(BehaviorSignal::occurredAt).reversed());
++        return signals.stream().limit(limit).toList();
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/CandidatePoolCache.java b/backend/src/main/java/com/himeros/recommendation/CandidatePoolCache.java
+new file mode 100644
+index 0000000..c4c974d
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/CandidatePoolCache.java
+@@ -0,0 +1,44 @@
++package com.himeros.recommendation;
++
++import java.time.Duration;
++import java.util.*;
++import java.util.stream.Collectors;
++import org.springframework.data.redis.core.StringRedisTemplate;
++import org.springframework.stereotype.Component;
++
++@Component
++public class CandidatePoolCache {
++    private static final String PREFIX = "discovery:pool:v2:";
++    private final StringRedisTemplate redis;
++    private final DiscoveryMetrics metrics;
++
++    public CandidatePoolCache(StringRedisTemplate redis, DiscoveryMetrics metrics) {
++        this.redis = redis;
++        this.metrics = metrics;
++    }
++
++    public Optional<List<UUID>> get(String key) {
++        try {
++            String raw = redis.opsForValue().get(PREFIX + key);
++            if (raw == null || raw.isBlank()) {
++                metrics.cacheMiss();
++                return Optional.empty();
++            }
++            metrics.cacheHit();
++            return Optional.of(Arrays.stream(raw.split(",")).filter(s -> !s.isBlank()).map(UUID::fromString).toList());
++        } catch (RuntimeException ex) {
++            metrics.cacheError();
++            return Optional.empty();
++        }
++    }
++
++    public void put(String key, List<UUID> ids, Duration ttl) {
++        try {
++            String raw = ids.stream().map(UUID::toString).collect(Collectors.joining(","));
++            redis.opsForValue().set(PREFIX + key, raw, ttl);
++        } catch (RuntimeException ex) {
++            metrics.cacheError();
++        }
++    }
++
++}
+\ No newline at end of file
+diff --git a/backend/src/main/java/com/himeros/recommendation/CandidateRetrievalService.java b/backend/src/main/java/com/himeros/recommendation/CandidateRetrievalService.java
+new file mode 100644
+index 0000000..d654332
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/CandidateRetrievalService.java
+@@ -0,0 +1,59 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.ProfileQuery;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class CandidateRetrievalService {
++    private final ProfileQuery profiles;
++    private final CandidatePoolCache cache;
++    private final RecommendationProperties properties;
++
++    public CandidateRetrievalService(ProfileQuery profiles, CandidatePoolCache cache, RecommendationProperties properties) {
++        this.profiles = profiles;
++        this.cache = cache;
++        this.properties = properties;
++    }
++
++    public List<ProfileQuery.ProfileView> retrieve(ProfileQuery.ProfileView me, int requestedLimit) {
++        int poolLimit = Math.min(properties.getPoolSize(), Math.max(100, requestedLimit * properties.getPoolMultiplier()));
++        Integer radius = retrievalRadius(me);
++        String key = cacheKey(me, radius, poolLimit);
++
++        Optional<List<UUID>> cached = cache.get(key);
++        if (cached.isPresent()) {
++            Map<UUID, ProfileQuery.ProfileView> byId = new HashMap<>();
++            profiles.findMany(cached.get()).forEach(p -> byId.put(p.userId(), p));
++            List<ProfileQuery.ProfileView> ordered = cached.get().stream().map(byId::get).filter(Objects::nonNull).toList();
++            if (!ordered.isEmpty()) return ordered;
++        }
++
++        List<ProfileQuery.ProfileView> result = profiles.candidatePool(
++            me.userId(), me.latitude(), me.longitude(), radius, me.globalMode(), poolLimit);
++
++        // Non-strict distance is a preference, not a hard wall. In sparse markets, expand the
++        // retrieval radius before ranking so the feed can degrade gracefully instead of going empty.
++        int sparseThreshold = Math.min(poolLimit, Math.max(50, requestedLimit * 5));
++        if (!me.globalMode() && !me.strictDistance() && result.size() < sparseThreshold
++                && !Objects.equals(radius, properties.getMaxRetrievalRadiusKm())) {
++            result = profiles.candidatePool(me.userId(), me.latitude(), me.longitude(),
++                properties.getMaxRetrievalRadiusKm(), false, poolLimit);
++        }
++
++        cache.put(key, result.stream().map(ProfileQuery.ProfileView::userId).toList(), properties.getCacheTtl());
++        return result;
++    }
++
++    private Integer retrievalRadius(ProfileQuery.ProfileView me) {
++        if (me.globalMode()) return null;
++        if (me.strictDistance()) return me.maxDistanceKm();
++        int relaxed = Math.max(properties.getNonStrictRadiusKm(), me.maxDistanceKm() * 3);
++        return Math.min(relaxed, properties.getMaxRetrievalRadiusKm());
++    }
++
++    private static String cacheKey(ProfileQuery.ProfileView me, Integer radius, int poolLimit) {
++        long version = me.updatedAt() == null ? 0 : me.updatedAt().getEpochSecond();
++        return me.userId() + ":" + version + ":" + (radius == null ? "global" : radius) + ":" + poolLimit;
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/CooldownPolicy.java b/backend/src/main/java/com/himeros/recommendation/CooldownPolicy.java
+new file mode 100644
+index 0000000..396c7a7
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/CooldownPolicy.java
+@@ -0,0 +1,27 @@
++package com.himeros.recommendation;
++
++import com.himeros.interaction.InteractionQuery;
++import com.himeros.shared.DiscoveryCooldownProperties;
++import java.time.Duration;
++import java.time.Instant;
++import java.util.Optional;
++import org.springframework.stereotype.Component;
++
++@Component
++public class CooldownPolicy {
++    private final DiscoveryCooldownProperties properties;
++
++    public CooldownPolicy(DiscoveryCooldownProperties properties) {
++        this.properties = properties;
++    }
++
++    public Optional<Instant> cooldownUntil(InteractionQuery.InteractionView interaction) {
++        Duration duration = properties.forType(interaction.type());
++        if (duration.isZero() || duration.isNegative()) return Optional.empty();
++        return Optional.of(interaction.createdAt().plus(duration));
++    }
++
++    public boolean suppressed(InteractionQuery.InteractionView interaction, Instant now) {
++        return cooldownUntil(interaction).map(until -> now.isBefore(until)).orElse(false);
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/DiscoveryCursorCodec.java b/backend/src/main/java/com/himeros/recommendation/DiscoveryCursorCodec.java
+new file mode 100644
+index 0000000..8c88b42
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/DiscoveryCursorCodec.java
+@@ -0,0 +1,22 @@
++package com.himeros.recommendation;
++
++import java.nio.charset.StandardCharsets;
++import java.util.*;
++import org.springframework.stereotype.Component;
++
++@Component
++public class DiscoveryCursorCodec {
++    public String encode(UUID lastUserId) {
++        return Base64.getUrlEncoder().withoutPadding().encodeToString(lastUserId.toString().getBytes(StandardCharsets.UTF_8));
++    }
++
++    public Optional<UUID> decode(String cursor) {
++        if (cursor == null || cursor.isBlank()) return Optional.empty();
++        try {
++            String value = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
++            return Optional.of(UUID.fromString(value));
++        } catch (IllegalArgumentException ex) {
++            return Optional.empty();
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/DiscoveryMetrics.java b/backend/src/main/java/com/himeros/recommendation/DiscoveryMetrics.java
+new file mode 100644
+index 0000000..28e168a
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/DiscoveryMetrics.java
+@@ -0,0 +1,37 @@
++package com.himeros.recommendation;
++
++import io.micrometer.core.instrument.Counter;
++import io.micrometer.core.instrument.DistributionSummary;
++import io.micrometer.core.instrument.MeterRegistry;
++import io.micrometer.core.instrument.Timer;
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
++import org.springframework.stereotype.Component;
++
++@Component
++public class DiscoveryMetrics {
++    private final MeterRegistry registry;
++    private final Timer requestTimer;
++    private final DistributionSummary poolSize;
++    private final DistributionSummary resultSize;
++    private final Map<String, Counter> exclusions = new ConcurrentHashMap<>();
++
++    public DiscoveryMetrics(MeterRegistry registry) {
++        this.registry = registry;
++        this.requestTimer = registry.timer("himeros.discovery.request");
++        this.poolSize = registry.summary("himeros.discovery.pool.size");
++        this.resultSize = registry.summary("himeros.discovery.result.size");
++    }
++
++    public Timer.Sample start() { return Timer.start(registry); }
++    public void stop(Timer.Sample sample) { sample.stop(requestTimer); }
++    public void pool(int size) { poolSize.record(size); }
++    public void results(int size) { resultSize.record(size); }
++    public void excluded(String reason) {
++        exclusions.computeIfAbsent(reason, key -> Counter.builder("himeros.discovery.excluded")
++            .tag("reason", key).register(registry)).increment();
++    }
++    public void cacheHit() { registry.counter("himeros.discovery.cache", "result", "hit").increment(); }
++    public void cacheMiss() { registry.counter("himeros.discovery.cache", "result", "miss").increment(); }
++    public void cacheError() { registry.counter("himeros.discovery.cache", "result", "error").increment(); }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/DistanceCalculator.java b/backend/src/main/java/com/himeros/recommendation/DistanceCalculator.java
+new file mode 100644
+index 0000000..1d1d182
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/DistanceCalculator.java
+@@ -0,0 +1,18 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.ProfileQuery;
++
++final class DistanceCalculator {
++    private DistanceCalculator() {}
++
++    static Double km(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
++        if (a.latitude() == null || a.longitude() == null || b.latitude() == null || b.longitude() == null) return null;
++        double radiusKm = 6371.0088;
++        double dLat = Math.toRadians(b.latitude() - a.latitude());
++        double dLon = Math.toRadians(b.longitude() - a.longitude());
++        double h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
++            + Math.cos(Math.toRadians(a.latitude())) * Math.cos(Math.toRadians(b.latitude()))
++            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
++        return radiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/DiversificationService.java b/backend/src/main/java/com/himeros/recommendation/DiversificationService.java
+new file mode 100644
+index 0000000..5da9399
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/DiversificationService.java
+@@ -0,0 +1,60 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.ProfileQuery;
++import java.time.Period;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class DiversificationService {
++    private final RecommendationProperties properties;
++
++    public DiversificationService(RecommendationProperties properties) { this.properties = properties; }
++
++    public List<RankingService.RankedCandidate> diversify(List<RankingService.RankedCandidate> ranked) {
++        if (ranked.size() < 2) return ranked;
++        List<RankingService.RankedCandidate> remaining = new ArrayList<>(ranked);
++        List<RankingService.RankedCandidate> selected = new ArrayList<>(ranked.size());
++        while (!remaining.isEmpty()) {
++            RankingService.RankedCandidate best = null;
++            double bestUtility = Double.NEGATIVE_INFINITY;
++            for (RankingService.RankedCandidate candidate : remaining) {
++                double similarity = selected.stream().mapToDouble(s -> similarity(candidate.profile(), s.profile())).max().orElse(0.0);
++                double utility = candidate.score() - (properties.getDiversificationPenalty() * similarity);
++                if (best == null || utility > bestUtility || (utility == bestUtility && compareId(candidate, best) < 0)) {
++                    best = candidate; bestUtility = utility;
++                }
++            }
++            selected.add(best);
++            remaining.remove(best);
++        }
++        return List.copyOf(selected);
++    }
++
++    private static int compareId(RankingService.RankedCandidate a, RankingService.RankedCandidate b) {
++        return a.profile().userId().toString().compareTo(b.profile().userId().toString());
++    }
++
++    private static double similarity(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
++        double score = 0;
++        if (a.bodyType() != null && a.bodyType() == b.bodyType()) score += 0.30;
++        if (Objects.equals(normalize(a.city()), normalize(b.city()))) score += 0.20;
++        int ageA = Period.between(a.birthDate(), java.time.LocalDate.now()).getYears();
++        int ageB = Period.between(b.birthDate(), java.time.LocalDate.now()).getYears();
++        if (Math.abs(ageA - ageB) <= 2) score += 0.20;
++        Set<String> left = normalize(a.interests()), right = normalize(b.interests());
++        if (!left.isEmpty() && !right.isEmpty()) {
++            Set<String> inter = new HashSet<>(left); inter.retainAll(right);
++            Set<String> union = new HashSet<>(left); union.addAll(right);
++            score += 0.30 * ((double) inter.size() / union.size());
++        }
++        return Math.min(1, score);
++    }
++
++    private static String normalize(String s) { return s == null ? "" : s.trim().toLowerCase(Locale.ROOT); }
++    private static Set<String> normalize(Set<String> values) {
++        Set<String> result = new HashSet<>();
++        if (values != null) values.stream().map(DiversificationService::normalize).filter(s -> !s.isBlank()).forEach(result::add);
++        return result;
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/EligibilityService.java b/backend/src/main/java/com/himeros/recommendation/EligibilityService.java
+new file mode 100644
+index 0000000..9f0cd4e
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/EligibilityService.java
+@@ -0,0 +1,50 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.ProfileQuery;
++import java.time.*;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class EligibilityService {
++    private final CooldownPolicy cooldownPolicy;
++
++    public EligibilityService(CooldownPolicy cooldownPolicy) {
++        this.cooldownPolicy = cooldownPolicy;
++    }
++
++    public EligibilityResult evaluate(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate, RecommendationContext context) {
++        if (candidate.userId().equals(me.userId())) return EligibilityResult.no("SELF");
++        if (!candidate.discoverable()) return EligibilityResult.no("NOT_DISCOVERABLE");
++        if (context.safetyExcluded().contains(candidate.userId())) return EligibilityResult.no("BLOCKED_OR_REPORTED");
++        if (context.activeMatches().contains(candidate.userId())) return EligibilityResult.no("ACTIVE_MATCH");
++        if (context.recentlyUnmatched().contains(candidate.userId())) return EligibilityResult.no("UNMATCH_COOLDOWN");
++
++        if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(candidate.gender())) {
++            return EligibilityResult.no("GENDER_FILTER");
++        }
++
++        int age = Period.between(candidate.birthDate(), context.today()).getYears();
++        if (me.strictAge() && (age < me.minAge() || age > me.maxAge())) {
++            return EligibilityResult.no("STRICT_AGE");
++        }
++
++        Double distance = DistanceCalculator.km(me, candidate);
++        if (!me.globalMode() && me.strictDistance()) {
++            if (distance == null) return EligibilityResult.no("DISTANCE_UNKNOWN");
++            if (distance > me.maxDistanceKm()) return EligibilityResult.no("STRICT_DISTANCE");
++        }
++
++        var interaction = context.lastInteractionByTarget().get(candidate.userId());
++        if (interaction != null && cooldownPolicy.suppressed(interaction, context.now())) {
++            return new EligibilityResult(false, "INTERACTION_COOLDOWN", cooldownPolicy.cooldownUntil(interaction).orElse(null));
++        }
++
++        return EligibilityResult.yes();
++    }
++
++    public record EligibilityResult(boolean eligible, String reason, Instant cooldownUntil) {
++        static EligibilityResult yes() { return new EligibilityResult(true, "ELIGIBLE", null); }
++        static EligibilityResult no(String reason) { return new EligibilityResult(false, reason, null); }
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/ExplorationService.java b/backend/src/main/java/com/himeros/recommendation/ExplorationService.java
+new file mode 100644
+index 0000000..0a9dbb3
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/ExplorationService.java
+@@ -0,0 +1,48 @@
++package com.himeros.recommendation;
++
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class ExplorationService {
++    private final RecommendationProperties properties;
++
++    public ExplorationService(RecommendationProperties properties) { this.properties = properties; }
++
++    public List<RankingService.RankedCandidate> rebalance(List<RankingService.RankedCandidate> input) {
++        if (input.size() < 5) return input;
++        List<RankingService.RankedCandidate> result = new ArrayList<>(input);
++        int newEvery = properties.getNewProfileShare() <= 0 ? Integer.MAX_VALUE : Math.max(2, (int) Math.round(1 / properties.getNewProfileShare()));
++        int exploreEvery = properties.getExplorationShare() <= 0 ? Integer.MAX_VALUE : Math.max(3, (int) Math.round(1 / properties.getExplorationShare()));
++
++        for (int pos = newEvery - 1; pos < result.size(); pos += newEvery) {
++            int found = findAfter(result, pos, c -> c.features().newProfile());
++            if (found > pos) move(result, found, pos);
++        }
++        for (int pos = exploreEvery - 1; pos < result.size(); pos += exploreEvery) {
++            int found = findBestExplorationAfter(result, pos);
++            if (found > pos) move(result, found, pos);
++        }
++        return List.copyOf(result);
++    }
++
++    private static int findAfter(List<RankingService.RankedCandidate> list, int position,
++                                 java.util.function.Predicate<RankingService.RankedCandidate> predicate) {
++        for (int i = position + 1; i < Math.min(list.size(), position + 30); i++) if (predicate.test(list.get(i))) return i;
++        return -1;
++    }
++
++    private static int findBestExplorationAfter(List<RankingService.RankedCandidate> list, int position) {
++        int best = -1; double bestValue = -1;
++        for (int i = position + 1; i < Math.min(list.size(), position + 30); i++) {
++            double value = list.get(i).features().exploration();
++            if (value > bestValue) { best = i; bestValue = value; }
++        }
++        return best;
++    }
++
++    private static void move(List<RankingService.RankedCandidate> list, int from, int to) {
++        RankingService.RankedCandidate candidate = list.remove(from);
++        list.add(to, candidate);
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/FeatureBuilder.java b/backend/src/main/java/com/himeros/recommendation/FeatureBuilder.java
+new file mode 100644
+index 0000000..4ce3f55
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/FeatureBuilder.java
+@@ -0,0 +1,141 @@
++package com.himeros.recommendation;
++
++import com.himeros.interaction.InteractionQuery;
++import com.himeros.profile.ProfileQuery;
++import java.time.*;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class FeatureBuilder {
++    private final ImplicitPreferenceService implicitPreferences;
++    private final RecommendationProperties properties;
++
++    public FeatureBuilder(ImplicitPreferenceService implicitPreferences, RecommendationProperties properties) {
++        this.implicitPreferences = implicitPreferences;
++        this.properties = properties;
++    }
++
++    public RankingFeatures build(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate, RecommendationContext context) {
++        Double distance = DistanceCalculator.km(me, candidate);
++        double preference = preferenceScore(me, candidate, context.today());
++        double distanceScore = distanceScore(me, distance);
++        double activity = activityScore(candidate.lastActiveAt(), context.now());
++        Set<String> common = commonInterests(me.interests(), candidate.interests());
++        double interests = jaccard(me.interests(), candidate.interests());
++        double quality = profileQuality(candidate);
++        double novelty = noveltyScore(candidate, context.lastInteractionByTarget().get(candidate.userId()), context.now(), properties.getNewProfileDays());
++        double implicit = implicitPreferences.score(context.implicitPreferences(), candidate);
++        double exploration = deterministicExploration(me.userId(), candidate.userId(), context.today());
++        return new RankingFeatures(preference, distanceScore, activity, interests, quality, novelty, implicit, exploration,
++            distance, common, isNew(candidate, context.now(), properties.getNewProfileDays()));
++    }
++
++    private static double preferenceScore(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate, LocalDate today) {
++        int age = Period.between(candidate.birthDate(), today).getYears();
++        double ageScore;
++        if (age >= me.minAge() && age <= me.maxAge()) ageScore = 1.0;
++        else {
++            int outside = age < me.minAge() ? me.minAge() - age : age - me.maxAge();
++            ageScore = Math.exp(-outside / 8.0);
++        }
++
++        double bodyScore;
++        if (me.preferredBodyTypes().isEmpty()) bodyScore = 0.80;
++        else if (candidate.bodyType() == null) bodyScore = 0.55;
++        else bodyScore = me.preferredBodyTypes().contains(candidate.bodyType()) ? 1.0 : 0.25;
++        return clamp(ageScore * 0.65 + bodyScore * 0.35);
++    }
++
++    private static double distanceScore(ProfileQuery.ProfileView me, Double distanceKm) {
++        if (distanceKm == null) return 0.50;
++        if (me.globalMode()) return Math.max(0.35, Math.exp(-distanceKm / 500.0));
++        double tau = Math.max(15.0, me.maxDistanceKm() * 0.75);
++        return clamp(Math.exp(-distanceKm / tau));
++    }
++
++    private static double activityScore(Instant lastActiveAt, Instant now) {
++        if (lastActiveAt == null) return 0.10;
++        long hours = Math.max(0, Duration.between(lastActiveAt, now).toHours());
++        if (hours <= 1) return 1.0;
++        if (hours <= 6) return 0.90;
++        if (hours <= 24) return 0.75;
++        if (hours <= 72) return 0.50;
++        if (hours <= 168) return 0.25;
++        return 0.10;
++    }
++
++    private static double profileQuality(ProfileQuery.ProfileView p) {
++        double score = 0.20; // mandatory identity fields
++        if (p.bio() != null && p.bio().trim().length() >= 40) score += 0.20;
++        if (p.city() != null && !p.city().isBlank() && p.state() != null && !p.state().isBlank()) score += 0.15;
++        if (p.country() != null && !p.country().isBlank()) score += 0.05;
++        if (p.bodyType() != null) score += 0.10;
++        if (p.interests() != null && p.interests().size() >= 3) score += 0.20;
++        if (p.latitude() != null && p.longitude() != null) score += 0.10;
++        return clamp(score);
++    }
++
++    private static double noveltyScore(ProfileQuery.ProfileView candidate, InteractionQuery.InteractionView previous, Instant now, int newProfileDays) {
++        double createdBoost = isNew(candidate, now, newProfileDays) ? 1.0 : 0.75;
++        if (previous == null) return createdBoost;
++        long days = Math.max(0, Duration.between(previous.createdAt(), now).toDays());
++        return clamp(Math.max(0.15, days / 60.0));
++    }
++
++    private static boolean isNew(ProfileQuery.ProfileView candidate, Instant now, int newProfileDays) {
++        return candidate.createdAt() != null && candidate.createdAt().isAfter(now.minus(Duration.ofDays(Math.max(1, newProfileDays))));
++    }
++
++    private static Set<String> commonInterests(Set<String> a, Set<String> b) {
++        Map<String, String> original = new HashMap<>();
++        for (String value : a) original.put(normalize(value), value);
++        Set<String> common = new LinkedHashSet<>();
++        for (String value : b) {
++            String key = normalize(value);
++            if (original.containsKey(key)) common.add(original.get(key));
++        }
++        return Set.copyOf(common);
++    }
++
++    private static double jaccard(Set<String> a, Set<String> b) {
++        Set<String> left = normalized(a), right = normalized(b);
++        if (left.isEmpty() && right.isEmpty()) return 0.0;
++        Set<String> intersection = new HashSet<>(left);
++        intersection.retainAll(right);
++        Set<String> union = new HashSet<>(left);
++        union.addAll(right);
++        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
++    }
++
++    private static Set<String> normalized(Set<String> values) {
++        if (values == null) return Set.of();
++        Set<String> result = new HashSet<>();
++        values.stream().map(FeatureBuilder::normalize).filter(s -> !s.isBlank()).forEach(result::add);
++        return result;
++    }
++
++    private static String normalize(String value) { return value == null ? "" : value.trim().toLowerCase(Locale.ROOT); }
++
++    private static double deterministicExploration(UUID viewer, UUID candidate, LocalDate day) {
++        long mixed = viewer.getMostSignificantBits() ^ candidate.getLeastSignificantBits() ^ day.toEpochDay();
++        mixed ^= (mixed >>> 33); mixed *= 0xff51afd7ed558ccdl; mixed ^= (mixed >>> 33);
++        return ((mixed & Long.MAX_VALUE) % 10_000) / 9_999.0;
++    }
++
++    private static double clamp(double value) { return Math.max(0, Math.min(1, value)); }
++
++    public record RankingFeatures(
++        double preference,
++        double distance,
++        double activity,
++        double interests,
++        double profileQuality,
++        double novelty,
++        double implicitPreference,
++        double exploration,
++        Double distanceKm,
++        Set<String> commonInterests,
++        boolean newProfile
++    ) {}
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/ImplicitPreferenceService.java b/backend/src/main/java/com/himeros/recommendation/ImplicitPreferenceService.java
+new file mode 100644
+index 0000000..d6cca28
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/ImplicitPreferenceService.java
+@@ -0,0 +1,83 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.*;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class ImplicitPreferenceService {
++    private final ProfileQuery profiles;
++    private final RecommendationProperties properties;
++
++    public ImplicitPreferenceService(ProfileQuery profiles, RecommendationProperties properties) {
++        this.profiles = profiles; this.properties = properties;
++    }
++
++    public ImplicitPreferenceModel build(List<BehaviorSignal> history) {
++        if (history.isEmpty()) return ImplicitPreferenceModel.empty();
++        List<UUID> targets = history.stream().map(BehaviorSignal::targetId).distinct().toList();
++        Map<UUID, ProfileQuery.ProfileView> targetProfiles = new HashMap<>();
++        profiles.findMany(targets).forEach(p -> targetProfiles.put(p.userId(), p));
++
++        Map<BodyType, Double> body = new EnumMap<>(BodyType.class);
++        Map<String, Double> interests = new HashMap<>();
++        double signalMass = 0;
++        int signals = 0;
++
++        for (BehaviorSignal signal : history) {
++            ProfileQuery.ProfileView target = targetProfiles.get(signal.targetId());
++            if (target == null) continue;
++            double weight = signalWeight(signal.type());
++            if (weight == 0) continue;
++            signals++;
++            signalMass += Math.abs(weight);
++            if (target.bodyType() != null) body.merge(target.bodyType(), weight, Double::sum);
++            for (String interest : target.interests()) {
++                String normalized = normalize(interest);
++                if (!normalized.isBlank()) interests.merge(normalized, weight, Double::sum);
++            }
++        }
++        return new ImplicitPreferenceModel(Map.copyOf(body), Map.copyOf(interests), signalMass, signals,
++            signals < properties.getColdStartInteractions());
++    }
++
++    public double score(ImplicitPreferenceModel model, ProfileQuery.ProfileView candidate) {
++        if (model.signalMass() <= 0) return 0.5;
++        double bodyScore = 0.5;
++        if (candidate.bodyType() != null)
++            bodyScore = normalizeSignal(model.bodyTypeWeights().getOrDefault(candidate.bodyType(), 0.0), model.signalMass());
++
++        double interestSignal = candidate.interests().stream().map(ImplicitPreferenceService::normalize)
++            .mapToDouble(i -> model.interestWeights().getOrDefault(i, 0.0)).average().orElse(0.0);
++        double interestScore = normalizeSignal(interestSignal, model.signalMass());
++        return clamp((bodyScore * 0.55) + (interestScore * 0.45));
++    }
++
++    /** Centralized behavior weights: deterministic, explainable and easy to tune. */
++    static double signalWeight(BehaviorSignalType type) {
++        return switch (type) {
++            case VIEW -> 0.05;
++            case LIKE -> 1.00;
++            case SUPER_LIKE -> 2.00;
++            case MATCH -> 3.00;
++            case MESSAGE -> 4.00;
++            case CONVERSATION -> 6.00;
++            case PASS -> -0.50;
++            case UNMATCH -> -3.00;
++            case BLOCK -> -8.00;
++            case REPORT -> -10.00;
++        };
++    }
++
++    private static double normalizeSignal(double value, double mass) {
++        double scaled = value / Math.max(1.0, mass * 0.20);
++        return clamp(0.5 + (0.5 * Math.tanh(scaled)));
++    }
++    private static String normalize(String value) { return value == null ? "" : value.trim().toLowerCase(Locale.ROOT); }
++    private static double clamp(double value) { return Math.max(0, Math.min(1, value)); }
++
++    public record ImplicitPreferenceModel(Map<BodyType, Double> bodyTypeWeights, Map<String, Double> interestWeights,
++                                          double signalMass, int signalCount, boolean coldStart) {
++        static ImplicitPreferenceModel empty() { return new ImplicitPreferenceModel(Map.of(), Map.of(), 0, 0, true); }
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/RankingService.java b/backend/src/main/java/com/himeros/recommendation/RankingService.java
+new file mode 100644
+index 0000000..035da99
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/RankingService.java
+@@ -0,0 +1,51 @@
++package com.himeros.recommendation;
++
++import com.himeros.profile.ProfileQuery;
++import java.util.*;
++import org.springframework.stereotype.Service;
++
++@Service
++public class RankingService {
++    public RankedCandidate rank(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate,
++                                FeatureBuilder.RankingFeatures features, RecommendationContext context) {
++        Weights weights = weightsFor(me, context.implicitPreferences().coldStart());
++        double score =
++            features.preference() * weights.preference() +
++            features.distance() * weights.distance() +
++            features.activity() * weights.activity() +
++            features.interests() * weights.interests() +
++            features.profileQuality() * weights.profileQuality() +
++            features.novelty() * weights.novelty() +
++            features.implicitPreference() * weights.implicitPreference() +
++            features.exploration() * weights.exploration();
++        return new RankedCandidate(candidate, round(clamp(score)), features, weights);
++    }
++
++    private static Weights weightsFor(ProfileQuery.ProfileView me, boolean coldStart) {
++        if (coldStart) {
++            return me.recentlyActiveFirst()
++                ? new Weights(0.30, 0.20, 0.20, 0.10, 0.10, 0.05, 0.00, 0.05)
++                : new Weights(0.35, 0.20, 0.15, 0.10, 0.10, 0.05, 0.00, 0.05);
++        }
++        return me.recentlyActiveFirst()
++            ? new Weights(0.24, 0.16, 0.20, 0.11, 0.09, 0.07, 0.08, 0.05)
++            : new Weights(0.30, 0.18, 0.12, 0.12, 0.10, 0.08, 0.05, 0.05);
++    }
++
++    private static double clamp(double value) { return Math.max(0, Math.min(1, value)); }
++    private static double round(double value) { return Math.round(value * 10_000.0) / 10_000.0; }
++
++    public record Weights(double preference, double distance, double activity, double interests,
++                          double profileQuality, double novelty, double implicitPreference, double exploration) {
++        public Map<String, Double> asMap() {
++            Map<String, Double> map = new LinkedHashMap<>();
++            map.put("preference", preference); map.put("distance", distance); map.put("activity", activity);
++            map.put("interests", interests); map.put("profileQuality", profileQuality); map.put("novelty", novelty);
++            map.put("implicitPreference", implicitPreference); map.put("exploration", exploration);
++            return map;
++        }
++    }
++
++    public record RankedCandidate(ProfileQuery.ProfileView profile, double score,
++                                  FeatureBuilder.RankingFeatures features, Weights weights) {}
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/RecommendationContext.java b/backend/src/main/java/com/himeros/recommendation/RecommendationContext.java
+new file mode 100644
+index 0000000..ca43c32
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/RecommendationContext.java
+@@ -0,0 +1,17 @@
++package com.himeros.recommendation;
++
++import com.himeros.interaction.InteractionQuery;
++import com.himeros.profile.ProfileQuery;
++import java.time.*;
++import java.util.*;
++
++record RecommendationContext(
++    ProfileQuery.ProfileView me,
++    Instant now,
++    LocalDate today,
++    Map<UUID, InteractionQuery.InteractionView> lastInteractionByTarget,
++    Set<UUID> safetyExcluded,
++    Set<UUID> activeMatches,
++    Set<UUID> recentlyUnmatched,
++    ImplicitPreferenceService.ImplicitPreferenceModel implicitPreferences
++) {}
+diff --git a/backend/src/main/java/com/himeros/recommendation/RecommendationController.java b/backend/src/main/java/com/himeros/recommendation/RecommendationController.java
+index 0d90b37..bcdc591 100755
+--- a/backend/src/main/java/com/himeros/recommendation/RecommendationController.java
++++ b/backend/src/main/java/com/himeros/recommendation/RecommendationController.java
+@@ -1 +1,48 @@
+-package com.himeros.recommendation;import com.himeros.shared.CurrentUser;import jakarta.validation.constraints.*;import java.util.*;import org.springframework.web.bind.annotation.*;@RestController@RequestMapping("/api/v1/discovery")public class RecommendationController{private final RecommendationService service;private final CurrentUser current;public RecommendationController(RecommendationService s,CurrentUser c){service=s;current=c;}@GetMapping List<RecommendationService.Recommendation> discover(@RequestParam(defaultValue="20")@Min(1)@Max(100)int limit){return service.discover(current.id(),limit);}}
++package com.himeros.recommendation;
++
++import com.himeros.interaction.InteractionService;
++import com.himeros.shared.CurrentUser;
++import com.himeros.shared.ResourceNotFoundException;
++import jakarta.validation.constraints.*;
++import java.util.*;
++import org.springframework.web.bind.annotation.*;
++
++@RestController
++@RequestMapping("/api/v1/discovery")
++public class RecommendationController {
++    private final RecommendationService service;
++    private final InteractionService interactions;
++    private final CurrentUser current;
++    private final RecommendationProperties properties;
++
++    public RecommendationController(RecommendationService service, InteractionService interactions, CurrentUser current, RecommendationProperties properties) {
++        this.service = service; this.interactions = interactions; this.current = current; this.properties = properties;
++    }
++
++    /** Existing contract kept intact. */
++    @GetMapping
++    List<RecommendationService.Recommendation> discover(@RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
++        return service.discover(current.id(), limit);
++    }
++
++    /** Cursor-based V2 contract for infinite discovery feeds. */
++    @GetMapping("/page")
++    RecommendationService.RecommendationPage page(
++            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
++            @RequestParam(required = false) String cursor) {
++        return service.discoverPage(current.id(), limit, cursor);
++    }
++
++    /** Development/support diagnostic: explains exactly why a candidate ranks or is excluded. */
++    @GetMapping("/explain/{candidateId}")
++    RecommendationService.Explanation explain(@PathVariable UUID candidateId) {
++        if (!properties.isExplainEnabled()) throw new ResourceNotFoundException("Discovery explain is disabled");
++        return service.explain(current.id(), candidateId);
++    }
++
++    /** Records a card impression without overwriting a stronger LIKE/PASS/SUPER_LIKE signal. */
++    @PostMapping("/{candidateId}/view")
++    void viewed(@PathVariable UUID candidateId) {
++        interactions.recordView(current.id(), candidateId);
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/RecommendationProperties.java b/backend/src/main/java/com/himeros/recommendation/RecommendationProperties.java
+new file mode 100644
+index 0000000..399483b
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/recommendation/RecommendationProperties.java
+@@ -0,0 +1,50 @@
++package com.himeros.recommendation;
++
++import java.time.Duration;
++import org.springframework.boot.context.properties.ConfigurationProperties;
++import org.springframework.stereotype.Component;
++
++@Component
++@ConfigurationProperties(prefix = "himeros.discovery")
++public class RecommendationProperties {
++    private int poolSize = 1000;
++    private int poolMultiplier = 20;
++    private int nonStrictRadiusKm = 250;
++    private int maxRetrievalRadiusKm = 1000;
++    private Duration cacheTtl = Duration.ofSeconds(45);
++    private Duration unmatchCooldown = Duration.ofDays(90);
++    private int coldStartInteractions = 20;
++    private int implicitHistoryLimit = 200;
++    private int newProfileDays = 7;
++    private double newProfileShare = 0.10;
++    private double explorationShare = 0.05;
++    private double diversificationPenalty = 0.12;
++    private boolean explainEnabled = false;
++
++    public int getPoolSize() { return poolSize; }
++    public void setPoolSize(int poolSize) { this.poolSize = poolSize; }
++    public int getPoolMultiplier() { return poolMultiplier; }
++    public void setPoolMultiplier(int poolMultiplier) { this.poolMultiplier = poolMultiplier; }
++    public int getNonStrictRadiusKm() { return nonStrictRadiusKm; }
++    public void setNonStrictRadiusKm(int nonStrictRadiusKm) { this.nonStrictRadiusKm = nonStrictRadiusKm; }
++    public int getMaxRetrievalRadiusKm() { return maxRetrievalRadiusKm; }
++    public void setMaxRetrievalRadiusKm(int maxRetrievalRadiusKm) { this.maxRetrievalRadiusKm = maxRetrievalRadiusKm; }
++    public Duration getCacheTtl() { return cacheTtl; }
++    public void setCacheTtl(Duration cacheTtl) { this.cacheTtl = cacheTtl; }
++    public Duration getUnmatchCooldown() { return unmatchCooldown; }
++    public void setUnmatchCooldown(Duration unmatchCooldown) { this.unmatchCooldown = unmatchCooldown; }
++    public int getColdStartInteractions() { return coldStartInteractions; }
++    public void setColdStartInteractions(int coldStartInteractions) { this.coldStartInteractions = coldStartInteractions; }
++    public int getImplicitHistoryLimit() { return implicitHistoryLimit; }
++    public void setImplicitHistoryLimit(int implicitHistoryLimit) { this.implicitHistoryLimit = implicitHistoryLimit; }
++    public int getNewProfileDays() { return newProfileDays; }
++    public void setNewProfileDays(int newProfileDays) { this.newProfileDays = newProfileDays; }
++    public double getNewProfileShare() { return newProfileShare; }
++    public void setNewProfileShare(double newProfileShare) { this.newProfileShare = newProfileShare; }
++    public double getExplorationShare() { return explorationShare; }
++    public void setExplorationShare(double explorationShare) { this.explorationShare = explorationShare; }
++    public double getDiversificationPenalty() { return diversificationPenalty; }
++    public void setDiversificationPenalty(double diversificationPenalty) { this.diversificationPenalty = diversificationPenalty; }
++    public boolean isExplainEnabled() { return explainEnabled; }
++    public void setExplainEnabled(boolean explainEnabled) { this.explainEnabled = explainEnabled; }
++}
+diff --git a/backend/src/main/java/com/himeros/recommendation/RecommendationService.java b/backend/src/main/java/com/himeros/recommendation/RecommendationService.java
+index 2b1e8dd..61dd297 100755
+--- a/backend/src/main/java/com/himeros/recommendation/RecommendationService.java
++++ b/backend/src/main/java/com/himeros/recommendation/RecommendationService.java
+@@ -1,11 +1,14 @@
+ package com.himeros.recommendation;
+ 
+ import com.himeros.interaction.InteractionQuery;
++import com.himeros.match.MatchQuery;
+ import com.himeros.profile.*;
+ import com.himeros.shared.ResourceNotFoundException;
+ import com.himeros.trustsafety.TrustSafetyQuery;
++import io.micrometer.core.instrument.Timer;
+ import java.time.*;
+ import java.util.*;
++import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.stereotype.Service;
+ 
+ @Service
+@@ -13,120 +16,146 @@ public class RecommendationService {
+     private final ProfileQuery profiles;
+     private final InteractionQuery interactions;
+     private final TrustSafetyQuery safety;
++    private final MatchQuery matches;
++    private final CandidateRetrievalService retrieval;
++    private final EligibilityService eligibility;
++    private final FeatureBuilder features;
++    private final RankingService ranking;
++    private final DiversificationService diversification;
++    private final ExplorationService exploration;
++    private final ImplicitPreferenceService implicitPreferences;
++    private final BehaviorSignalService behaviorSignals;
++    private final DiscoveryCursorCodec cursors;
++    private final RecommendationProperties properties;
++    private final DiscoveryMetrics metrics;
++    private final Clock clock;
++
++    @Autowired
++    public RecommendationService(ProfileQuery profiles, InteractionQuery interactions, TrustSafetyQuery safety,
++            MatchQuery matches, CandidateRetrievalService retrieval, EligibilityService eligibility,
++            FeatureBuilder features, RankingService ranking, DiversificationService diversification,
++            ExplorationService exploration, ImplicitPreferenceService implicitPreferences, BehaviorSignalService behaviorSignals,
++            DiscoveryCursorCodec cursors, RecommendationProperties properties, DiscoveryMetrics metrics) {
++        this(profiles, interactions, safety, matches, retrieval, eligibility, features, ranking, diversification,
++            exploration, implicitPreferences, behaviorSignals, cursors, properties, metrics, Clock.systemUTC());
++    }
+ 
+-    public RecommendationService(ProfileQuery profiles, InteractionQuery interactions, TrustSafetyQuery safety) {
+-        this.profiles = profiles;
+-        this.interactions = interactions;
+-        this.safety = safety;
++    RecommendationService(ProfileQuery profiles, InteractionQuery interactions, TrustSafetyQuery safety,
++            MatchQuery matches, CandidateRetrievalService retrieval, EligibilityService eligibility,
++            FeatureBuilder features, RankingService ranking, DiversificationService diversification,
++            ExplorationService exploration, ImplicitPreferenceService implicitPreferences, BehaviorSignalService behaviorSignals,
++            DiscoveryCursorCodec cursors, RecommendationProperties properties, DiscoveryMetrics metrics, Clock clock) {
++        this.profiles = profiles; this.interactions = interactions; this.safety = safety; this.matches = matches;
++        this.retrieval = retrieval; this.eligibility = eligibility; this.features = features; this.ranking = ranking;
++        this.diversification = diversification; this.exploration = exploration; this.implicitPreferences = implicitPreferences;
++        this.behaviorSignals = behaviorSignals; this.cursors = cursors; this.properties = properties; this.metrics = metrics; this.clock = clock;
+     }
+ 
++    /** Backwards-compatible list endpoint. */
+     public List<Recommendation> discover(UUID user, int limit) {
+-        ProfileQuery.ProfileView me = profiles.find(user)
+-            .orElseThrow(() -> new ResourceNotFoundException("Complete your profile first"));
+-        Set<UUID> seen = interactions.seenBy(user);
+-        Set<UUID> excluded = safety.excluded(user);
+-
+-        return profiles.candidatePool(user, Math.max(100, limit * 10)).stream()
+-            .filter(p -> !seen.contains(p.userId()) && !excluded.contains(p.userId()))
+-            .filter(p -> eligible(me, p))
+-            .map(p -> new Recommendation(publicProfile(p), score(me, p), roundedDistance(me, p)))
+-            .sorted(Comparator.comparingDouble(Recommendation::score).reversed())
+-            .limit(Math.min(limit, 100))
+-            .toList();
++        return discoverPage(user, limit, null).items();
+     }
+ 
+-    /**
+-     * Discovery preferences belong to the viewer and define the viewer's feed.
+-     *
+-     * A candidate's own lookingFor/age/distance/body preferences must not be
+-     * re-applied in reverse here. Doing that makes discovery implicitly mutual
+-     * and can hide two otherwise valid accounts from one another when only one
+-     * side has changed a preference (or an older onboarding default was saved).
+-     *
+-     * Inbound visibility is controlled by discoverable plus trust/safety rules.
+-     */
+-    private boolean eligible(ProfileQuery.ProfileView me, ProfileQuery.ProfileView candidate) {
+-        if (!candidate.discoverable()) return false;
+-
+-        int candidateAge = age(candidate.birthDate());
+-        if (me.strictAge() && (candidateAge < me.minAge() || candidateAge > me.maxAge())) return false;
+-
+-        if (!me.lookingFor().isEmpty() && !me.lookingFor().contains(candidate.gender())) return false;
+-
+-        if (!me.preferredBodyTypes().isEmpty()
+-            && candidate.bodyType() != null
+-            && !me.preferredBodyTypes().contains(candidate.bodyType())) {
+-            return false;
++    public RecommendationPage discoverPage(UUID user, int limit, String cursor) {
++        Timer.Sample timer = metrics.start();
++        try {
++            Instant now = clock.instant();
++            ProfileQuery.ProfileView me = viewer(user);
++            List<ProfileQuery.ProfileView> pool = retrieval.retrieve(me, Math.min(limit, 100));
++            RecommendationContext context = context(user, me, now, pool.stream().map(ProfileQuery.ProfileView::userId).toList());
++            metrics.pool(pool.size());
++
++            List<RankingService.RankedCandidate> ranked = new ArrayList<>();
++            for (ProfileQuery.ProfileView candidate : pool) {
++                EligibilityService.EligibilityResult result = eligibility.evaluate(context.me(), candidate, context);
++                if (!result.eligible()) {
++                    metrics.excluded(result.reason());
++                    continue;
++                }
++                FeatureBuilder.RankingFeatures built = features.build(context.me(), candidate, context);
++                ranked.add(ranking.rank(context.me(), candidate, built, context));
++            }
++            ranked.sort(Comparator.comparingDouble(RankingService.RankedCandidate::score).reversed()
++                .thenComparing(c -> c.profile().userId().toString()));
++            List<RankingService.RankedCandidate> ordered = exploration.rebalance(diversification.diversify(ranked));
++
++            int start = cursorStart(ordered, cursor);
++            int end = Math.min(ordered.size(), start + Math.min(limit, 100));
++            List<Recommendation> items = ordered.subList(start, end).stream().map(RecommendationService::recommendation).toList();
++            String nextCursor = end < ordered.size() && !items.isEmpty()
++                ? cursors.encode(items.getLast().profile().userId()) : null;
++            metrics.results(items.size());
++            return new RecommendationPage(items, nextCursor, pool.size(), ranked.size());
++        } finally {
++            metrics.stop(timer);
+         }
++    }
+ 
+-        Double distance = distance(me, candidate);
+-        if (!me.globalMode()
+-            && me.strictDistance()
+-            && distance != null
+-            && distance > me.maxDistanceKm()) {
+-            return false;
++    public Explanation explain(UUID user, UUID candidateId) {
++        Instant now = clock.instant();
++        ProfileQuery.ProfileView me = viewer(user);
++        ProfileQuery.ProfileView candidate = profiles.find(candidateId)
++            .orElseThrow(() -> new ResourceNotFoundException("Candidate profile not found"));
++        RecommendationContext context = context(user, me, now, List.of(candidateId));
++        EligibilityService.EligibilityResult result = eligibility.evaluate(context.me(), candidate, context);
++        Double distanceKm = DistanceCalculator.km(context.me(), candidate);
++        if (!result.eligible()) {
++            return new Explanation(candidateId, false, result.reason(), null, rounded(distanceKm), Map.of(), Map.of(),
++                Set.of(), result.cooldownUntil(), context.implicitPreferences().coldStart());
+         }
++        FeatureBuilder.RankingFeatures built = features.build(context.me(), candidate, context);
++        RankingService.RankedCandidate ranked = ranking.rank(context.me(), candidate, built, context);
++        return new Explanation(candidateId, true, "ELIGIBLE", score100(ranked.score()), rounded(built.distanceKm()),
++            featureMap(built), ranked.weights().asMap(), built.commonInterests(), null,
++            context.implicitPreferences().coldStart());
++    }
+ 
+-        return true;
++    private ProfileQuery.ProfileView viewer(UUID user) {
++        return profiles.find(user).orElseThrow(() -> new ResourceNotFoundException("Complete your profile first"));
+     }
+ 
+-    private static int age(LocalDate birthDate) {
+-        return Period.between(birthDate, LocalDate.now()).getYears();
++    private RecommendationContext context(UUID user, ProfileQuery.ProfileView me, Instant now, Collection<UUID> candidateIds) {
++        Map<UUID, InteractionQuery.InteractionView> latest = interactions.latestBy(user, candidateIds);
++        var implicitModel = implicitPreferences.build(behaviorSignals.recent(user, properties.getImplicitHistoryLimit()));
++        return new RecommendationContext(
++            me, now, LocalDate.ofInstant(now, ZoneOffset.UTC), latest,
++            safety.excluded(user), matches.activeCounterparts(user),
++            matches.unmatchedSince(user, now.minus(properties.getUnmatchCooldown())), implicitModel);
+     }
+ 
+-    private double score(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+-        double score = 50;
+-        Set<String> overlap = new HashSet<>(a.interests());
+-        overlap.retainAll(b.interests());
+-        score += Math.min(25, overlap.size() * 5);
+-        Double distance = distance(a, b);
+-        if (distance != null) {
+-            score += Math.max(0, 25 - (distance / Math.max(1, a.maxDistanceKm())) * 25);
+-        }
+-        return Math.round(score * 100.0) / 100.0;
++    private int cursorStart(List<RankingService.RankedCandidate> ordered, String cursor) {
++        Optional<UUID> last = cursors.decode(cursor);
++        if (last.isEmpty()) return 0;
++        for (int i = 0; i < ordered.size(); i++) if (ordered.get(i).profile().userId().equals(last.get())) return i + 1;
++        return 0;
+     }
+ 
+-    private Double roundedDistance(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+-        Double d = distance(a, b);
+-        return d == null ? null : Math.round(d * 10.0) / 10.0;
++    private static Recommendation recommendation(RankingService.RankedCandidate candidate) {
++        return new Recommendation(publicProfile(candidate.profile()), score100(candidate.score()), rounded(candidate.features().distanceKm()));
+     }
+ 
+-    private Double distance(ProfileQuery.ProfileView a, ProfileQuery.ProfileView b) {
+-        if (a.latitude() == null || a.longitude() == null || b.latitude() == null || b.longitude() == null) return null;
+-        double radiusKm = 6371;
+-        double dLat = Math.toRadians(b.latitude() - a.latitude());
+-        double dLon = Math.toRadians(b.longitude() - a.longitude());
+-        double h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+-            + Math.cos(Math.toRadians(a.latitude())) * Math.cos(Math.toRadians(b.latitude()))
+-            * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+-        return radiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
++    private static Map<String, Double> featureMap(FeatureBuilder.RankingFeatures f) {
++        Map<String, Double> map = new LinkedHashMap<>();
++        map.put("preference", f.preference()); map.put("distance", f.distance()); map.put("activity", f.activity());
++        map.put("interests", f.interests()); map.put("profileQuality", f.profileQuality()); map.put("novelty", f.novelty());
++        map.put("implicitPreference", f.implicitPreference()); map.put("exploration", f.exploration());
++        return map;
+     }
+ 
++    private static double score100(double score) { return Math.round(score * 10_000.0) / 100.0; }
++    private static Double rounded(Double value) { return value == null ? null : Math.round(value * 10.0) / 10.0; }
++
+     private static PublicCandidate publicProfile(ProfileQuery.ProfileView p) {
+-        return new PublicCandidate(
+-            p.userId(),
+-            p.displayName(),
+-            p.bio(),
+-            age(p.birthDate()),
+-            p.gender(),
+-            p.city(),
+-            p.state(),
+-            p.country(),
+-            p.interests()
+-        );
++        return new PublicCandidate(p.userId(), p.displayName(), p.bio(),
++            Period.between(p.birthDate(), LocalDate.now()).getYears(), p.gender(), p.bodyType(),
++            p.city(), p.state(), p.country(), p.interests());
+     }
+ 
+-    public record PublicCandidate(
+-        UUID userId,
+-        String displayName,
+-        String bio,
+-        int age,
+-        Gender gender,
+-        String city,
+-        String state,
+-        String country,
+-        Set<String> interests
+-    ) {}
+-
++    public record PublicCandidate(UUID userId, String displayName, String bio, int age, Gender gender, BodyType bodyType,
++                                  String city, String state, String country, Set<String> interests) {}
+     public record Recommendation(PublicCandidate profile, double score, Double distanceKm) {}
++    public record RecommendationPage(List<Recommendation> items, String nextCursor, int poolSize, int eligibleCount) {}
++    public record Explanation(UUID candidateId, boolean eligible, String excludedBy, Double score, Double distanceKm,
++                              Map<String, Double> features, Map<String, Double> weights, Set<String> commonInterests,
++                              Instant cooldownUntil, boolean coldStart) {}
+ }
+diff --git a/backend/src/main/java/com/himeros/shared/DiscoveryCooldownProperties.java b/backend/src/main/java/com/himeros/shared/DiscoveryCooldownProperties.java
+new file mode 100644
+index 0000000..0679d7e
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/shared/DiscoveryCooldownProperties.java
+@@ -0,0 +1,34 @@
++package com.himeros.shared;
++
++import java.time.Duration;
++import org.springframework.boot.context.properties.ConfigurationProperties;
++import org.springframework.stereotype.Component;
++
++/** Cooldowns shared by interaction recording and discovery eligibility. */
++@Component
++@ConfigurationProperties(prefix = "himeros.discovery")
++public class DiscoveryCooldownProperties {
++    private Duration viewCooldown = Duration.ofHours(24);
++    private Duration passCooldown = Duration.ofDays(14);
++    private Duration likeCooldown = Duration.ofDays(30);
++    private Duration superLikeCooldown = Duration.ofDays(30);
++
++    public Duration getViewCooldown() { return viewCooldown; }
++    public void setViewCooldown(Duration viewCooldown) { this.viewCooldown = viewCooldown; }
++    public Duration getPassCooldown() { return passCooldown; }
++    public void setPassCooldown(Duration passCooldown) { this.passCooldown = passCooldown; }
++    public Duration getLikeCooldown() { return likeCooldown; }
++    public void setLikeCooldown(Duration likeCooldown) { this.likeCooldown = likeCooldown; }
++    public Duration getSuperLikeCooldown() { return superLikeCooldown; }
++    public void setSuperLikeCooldown(Duration superLikeCooldown) { this.superLikeCooldown = superLikeCooldown; }
++
++    public Duration forType(String type) {
++        return switch (type) {
++            case "VIEW" -> viewCooldown;
++            case "PASS" -> passCooldown;
++            case "LIKE" -> likeCooldown;
++            case "SUPER_LIKE" -> superLikeCooldown;
++            default -> Duration.ZERO;
++        };
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/shared/SecurityConfig.java b/backend/src/main/java/com/himeros/shared/SecurityConfig.java
+index a156be5..fbcc2dd 100755
+--- a/backend/src/main/java/com/himeros/shared/SecurityConfig.java
++++ b/backend/src/main/java/com/himeros/shared/SecurityConfig.java
+@@ -25,6 +25,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
+ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+ import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
++import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+ import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+ import org.springframework.security.web.SecurityFilterChain;
+ import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+@@ -69,7 +70,7 @@ public class SecurityConfig {
+     }
+ 
+     @Bean
+-    SecurityFilterChain securityFilterChain(HttpSecurity http, RateLimitFilter rateLimitFilter) throws Exception {
++    SecurityFilterChain securityFilterChain(HttpSecurity http, RateLimitFilter rateLimitFilter, UserActivityFilter userActivityFilter) throws Exception {
+         return http
+                 .csrf(csrf -> csrf.disable())
+                 .cors(Customizer.withDefaults())
+@@ -84,6 +85,7 @@ public class SecurityConfig {
+                 .oauth2ResourceServer(
+                         oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
++                .addFilterAfter(userActivityFilter, BearerTokenAuthenticationFilter.class)
+                 .build();
+     }
+ 
+diff --git a/backend/src/main/java/com/himeros/shared/UserActivityFilter.java b/backend/src/main/java/com/himeros/shared/UserActivityFilter.java
+new file mode 100644
+index 0000000..710d32a
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/shared/UserActivityFilter.java
+@@ -0,0 +1,58 @@
++package com.himeros.shared;
++
++import jakarta.servlet.*;
++import jakarta.servlet.http.*;
++import java.io.IOException;
++import java.time.*;
++import java.util.UUID;
++import org.springframework.context.ApplicationEventPublisher;
++import org.springframework.data.redis.core.StringRedisTemplate;
++import org.springframework.security.core.Authentication;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.security.oauth2.jwt.Jwt;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++@Component
++public class UserActivityFilter extends OncePerRequestFilter {
++    private static final Duration THROTTLE = Duration.ofMinutes(5);
++    private final ApplicationEventPublisher events;
++    private final StringRedisTemplate redis;
++
++    public UserActivityFilter(ApplicationEventPublisher events, StringRedisTemplate redis) {
++        this.events = events; this.redis = redis;
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        observeAuthenticatedActivity();
++        chain.doFilter(request, response);
++    }
++
++    private void observeAuthenticatedActivity() {
++        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
++        if (auth == null || !auth.isAuthenticated()) return;
++        Object principal = auth.getPrincipal();
++        String subject = principal instanceof Jwt jwt ? jwt.getSubject() : null;
++        if (subject == null) return;
++        try {
++            UUID userId = UUID.fromString(subject);
++            if (shouldPublish(userId)) events.publishEvent(new UserActivityObserved(userId, Instant.now()));
++        } catch (IllegalArgumentException ignored) {
++            // Non-UUID principals are not profile users.
++        } catch (RuntimeException ignored) {
++            // Presence tracking must never make an authenticated business request fail.
++        }
++    }
++
++    private boolean shouldPublish(UUID userId) {
++        try {
++            Boolean first = redis.opsForValue().setIfAbsent("activity:v1:" + userId, "1", THROTTLE);
++            return Boolean.TRUE.equals(first);
++        } catch (RuntimeException redisUnavailable) {
++            // PostgreSQL has a second conditional 5-minute guard.
++            return true;
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/himeros/shared/UserActivityObserved.java b/backend/src/main/java/com/himeros/shared/UserActivityObserved.java
+new file mode 100644
+index 0000000..41cfa83
+--- /dev/null
++++ b/backend/src/main/java/com/himeros/shared/UserActivityObserved.java
+@@ -0,0 +1,6 @@
++package com.himeros.shared;
++
++import java.time.Instant;
++import java.util.UUID;
++
++public record UserActivityObserved(UUID userId, Instant at) {}
+diff --git a/backend/src/main/java/com/himeros/trustsafety/Block.java b/backend/src/main/java/com/himeros/trustsafety/Block.java
+index 5a242b8..3dd18f2 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/Block.java
++++ b/backend/src/main/java/com/himeros/trustsafety/Block.java
+@@ -1 +1 @@
+-package com.himeros.trustsafety;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="blocks")class Block{@Id private UUID id;@Column(name="blocker_id",nullable=false)private UUID blocker;@Column(name="blocked_id",nullable=false)private UUID blocked;@Column(name="created_at",nullable=false)private Instant created;protected Block(){}Block(UUID a,UUID b){id=UUID.randomUUID();blocker=a;blocked=b;created=Instant.now();}}
++package com.himeros.trustsafety;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="blocks")class Block{@Id private UUID id;@Column(name="blocker_id",nullable=false)private UUID blocker;@Column(name="blocked_id",nullable=false)private UUID blocked;@Column(name="created_at",nullable=false)private Instant created;protected Block(){}Block(UUID a,UUID b){id=UUID.randomUUID();blocker=a;blocked=b;created=Instant.now();}UUID blocked(){return blocked;}Instant created(){return created;}}
+diff --git a/backend/src/main/java/com/himeros/trustsafety/BlockRepository.java b/backend/src/main/java/com/himeros/trustsafety/BlockRepository.java
+index 24c437e..ad55d17 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/BlockRepository.java
++++ b/backend/src/main/java/com/himeros/trustsafety/BlockRepository.java
+@@ -1,8 +1,14 @@
+ package com.himeros.trustsafety;
+-import java.util.*;import org.springframework.data.jpa.repository.*;import org.springframework.data.repository.query.Param;
+-interface BlockRepository extends JpaRepository<Block,UUID>{
+- boolean existsByBlockerAndBlocked(UUID blocker,UUID blocked);
+- void deleteByBlockerAndBlocked(UUID blocker,UUID blocked);
+- @Query("select b.blocked from Block b where b.blocker=:u") Set<UUID> blockedBy(@Param("u") UUID u);
+- @Query("select b.blocker from Block b where b.blocked=:u") Set<UUID> blockedMe(@Param("u") UUID u);
++
++import java.util.*;
++import org.springframework.data.domain.Pageable;
++import org.springframework.data.jpa.repository.*;
++import org.springframework.data.repository.query.Param;
++
++interface BlockRepository extends JpaRepository<Block, UUID> {
++    boolean existsByBlockerAndBlocked(UUID blocker, UUID blocked);
++    void deleteByBlockerAndBlocked(UUID blocker, UUID blocked);
++    @Query("select b.blocked from Block b where b.blocker=:u") Set<UUID> blockedBy(@Param("u") UUID u);
++    @Query("select b.blocker from Block b where b.blocked=:u") Set<UUID> blockedMe(@Param("u") UUID u);
++    @Query("select b from Block b where b.blocker=:u order by b.created desc") List<Block> recordsBy(@Param("u") UUID u, Pageable pageable);
+ }
+diff --git a/backend/src/main/java/com/himeros/trustsafety/Report.java b/backend/src/main/java/com/himeros/trustsafety/Report.java
+index 81b7e6e..7033b7b 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/Report.java
++++ b/backend/src/main/java/com/himeros/trustsafety/Report.java
+@@ -1 +1 @@
+-package com.himeros.trustsafety;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="reports")class Report{@Id private UUID id;@Column(name="reporter_id",nullable=false)private UUID reporter;@Column(name="reported_id",nullable=false)private UUID reported;@Column(nullable=false)private String reason;@Column(length=1000)private String details;@Enumerated(EnumType.STRING)@Column(nullable=false)private Status status;@Column(name="created_at",nullable=false)private Instant created;enum Status{OPEN,REVIEWING,CLOSED}protected Report(){}UUID id(){return id;}Report(UUID a,UUID b,String reason,String details){id=UUID.randomUUID();reporter=a;reported=b;this.reason=reason;this.details=details;status=Status.OPEN;created=Instant.now();}}
++package com.himeros.trustsafety;import jakarta.persistence.*;import java.time.*;import java.util.*;@Entity@Table(name="reports")class Report{@Id private UUID id;@Column(name="reporter_id",nullable=false)private UUID reporter;@Column(name="reported_id",nullable=false)private UUID reported;@Column(nullable=false)private String reason;@Column(length=1000)private String details;@Enumerated(EnumType.STRING)@Column(nullable=false)private Status status;@Column(name="created_at",nullable=false)private Instant created;enum Status{OPEN,REVIEWING,CLOSED}protected Report(){}UUID id(){return id;}UUID reported(){return reported;}Instant created(){return created;}Report(UUID a,UUID b,String reason,String details){id=UUID.randomUUID();reporter=a;reported=b;this.reason=reason;this.details=details;status=Status.OPEN;created=Instant.now();}}
+diff --git a/backend/src/main/java/com/himeros/trustsafety/ReportRepository.java b/backend/src/main/java/com/himeros/trustsafety/ReportRepository.java
+index 4a1a66d..a8c2999 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/ReportRepository.java
++++ b/backend/src/main/java/com/himeros/trustsafety/ReportRepository.java
+@@ -1 +1,12 @@
+-package com.himeros.trustsafety;import java.util.UUID;import org.springframework.data.jpa.repository.JpaRepository;interface ReportRepository extends JpaRepository<Report,UUID>{}
++package com.himeros.trustsafety;
++
++import java.util.*;
++import org.springframework.data.domain.Pageable;
++import org.springframework.data.jpa.repository.*;
++import org.springframework.data.repository.query.Param;
++
++interface ReportRepository extends JpaRepository<Report, UUID> {
++    @Query("select r.reported from Report r where r.reporter=:u") Set<UUID> reportedBy(@Param("u") UUID userId);
++    @Query("select r.reporter from Report r where r.reported=:u") Set<UUID> reportedMe(@Param("u") UUID userId);
++    @Query("select r from Report r where r.reporter=:u order by r.created desc") List<Report> recordsBy(@Param("u") UUID userId, Pageable pageable);
++}
+diff --git a/backend/src/main/java/com/himeros/trustsafety/TrustSafetyQuery.java b/backend/src/main/java/com/himeros/trustsafety/TrustSafetyQuery.java
+index 747398f..21d1a5e 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/TrustSafetyQuery.java
++++ b/backend/src/main/java/com/himeros/trustsafety/TrustSafetyQuery.java
+@@ -1 +1,11 @@
+-package com.himeros.trustsafety;import java.util.*;public interface TrustSafetyQuery{boolean blockedEitherWay(UUID a,UUID b);Set<UUID> excluded(UUID user);}
++package com.himeros.trustsafety;
++
++import java.time.Instant;
++import java.util.*;
++
++public interface TrustSafetyQuery {
++    boolean blockedEitherWay(UUID a, UUID b);
++    Set<UUID> excluded(UUID user);
++    List<SafetySignal> behaviorSignals(UUID user, int limit);
++    record SafetySignal(UUID targetId, String type, Instant occurredAt) {}
++}
+diff --git a/backend/src/main/java/com/himeros/trustsafety/TrustSafetyService.java b/backend/src/main/java/com/himeros/trustsafety/TrustSafetyService.java
+index 860f133..1344ced 100755
+--- a/backend/src/main/java/com/himeros/trustsafety/TrustSafetyService.java
++++ b/backend/src/main/java/com/himeros/trustsafety/TrustSafetyService.java
+@@ -1 +1,61 @@
+-package com.himeros.trustsafety;import com.himeros.shared.outbox.OutboxService;import java.util.*;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;@Service public class TrustSafetyService implements TrustSafetyQuery{private final BlockRepository blocks;private final ReportRepository reports;private final OutboxService outbox;public TrustSafetyService(BlockRepository b,ReportRepository r,OutboxService o){blocks=b;reports=r;outbox=o;}@Transactional public void block(UUID actor,UUID target){if(actor.equals(target))throw new IllegalArgumentException("Cannot block yourself");if(!blocks.existsByBlockerAndBlocked(actor,target)){blocks.save(new Block(actor,target));outbox.append("Block",actor+":"+target,"himeros.trust.user-blocked.v1","himeros.trust.events.v1",actor,Map.of("blockerId",actor,"blockedId",target));}}@Transactional public void unblock(UUID actor,UUID target){blocks.deleteByBlockerAndBlocked(actor,target);}@Transactional public UUID report(UUID actor,UUID target,String reason,String details){if(actor.equals(target))throw new IllegalArgumentException("Cannot report yourself");Report r=reports.save(new Report(actor,target,reason,details));return r.id();}@Override@Transactional(readOnly=true)public boolean blockedEitherWay(UUID a,UUID b){return blocks.existsByBlockerAndBlocked(a,b)||blocks.existsByBlockerAndBlocked(b,a);}@Override@Transactional(readOnly=true)public Set<UUID> excluded(UUID u){Set<UUID> x=new HashSet<>(blocks.blockedBy(u));x.addAll(blocks.blockedMe(u));return x;}}
++package com.himeros.trustsafety;
++
++import com.himeros.shared.outbox.OutboxService;
++import java.util.*;
++import org.springframework.stereotype.Service;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.transaction.annotation.Transactional;
++
++@Service
++public class TrustSafetyService implements TrustSafetyQuery {
++    private final BlockRepository blocks;
++    private final ReportRepository reports;
++    private final OutboxService outbox;
++
++    public TrustSafetyService(BlockRepository blocks, ReportRepository reports, OutboxService outbox) {
++        this.blocks = blocks; this.reports = reports; this.outbox = outbox;
++    }
++
++    @Transactional
++    public void block(UUID actor, UUID target) {
++        if (actor.equals(target)) throw new IllegalArgumentException("Cannot block yourself");
++        if (!blocks.existsByBlockerAndBlocked(actor, target)) {
++            blocks.save(new Block(actor, target));
++            outbox.append("Block", actor + ":" + target, "himeros.trust.user-blocked.v1", "himeros.trust.events.v1", actor,
++                Map.of("blockerId", actor, "blockedId", target));
++        }
++    }
++
++    @Transactional public void unblock(UUID actor, UUID target) { blocks.deleteByBlockerAndBlocked(actor, target); }
++
++    @Transactional
++    public UUID report(UUID actor, UUID target, String reason, String details) {
++        if (actor.equals(target)) throw new IllegalArgumentException("Cannot report yourself");
++        return reports.save(new Report(actor, target, reason, details)).id();
++    }
++
++    @Override @Transactional(readOnly = true)
++    public boolean blockedEitherWay(UUID a, UUID b) {
++        return blocks.existsByBlockerAndBlocked(a, b) || blocks.existsByBlockerAndBlocked(b, a);
++    }
++
++    @Override @Transactional(readOnly = true)
++    public Set<UUID> excluded(UUID user) {
++        Set<UUID> excluded = new HashSet<>(blocks.blockedBy(user));
++        excluded.addAll(blocks.blockedMe(user));
++        excluded.addAll(reports.reportedBy(user));
++        // A report is a safety boundary in both directions to avoid resurfacing or retaliation.
++        excluded.addAll(reports.reportedMe(user));
++        return excluded;
++    }
++
++    @Override @Transactional(readOnly = true)
++    public List<SafetySignal> behaviorSignals(UUID user, int limit) {
++        int cap = Math.max(1, Math.min(limit, 200));
++        List<SafetySignal> result = new ArrayList<>();
++        blocks.recordsBy(user, PageRequest.of(0, cap)).forEach(b -> result.add(new SafetySignal(b.blocked(), "BLOCK", b.created())));
++        reports.recordsBy(user, PageRequest.of(0, cap)).forEach(r -> result.add(new SafetySignal(r.reported(), "REPORT", r.created())));
++        result.sort(Comparator.comparing(SafetySignal::occurredAt).reversed());
++        return result.stream().limit(cap).toList();
++    }
++}
+diff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml
+index a371dcb..3c36f7f 100755
+--- a/backend/src/main/resources/application.yml
++++ b/backend/src/main/resources/application.yml
+@@ -82,3 +82,21 @@ himeros:
+     public-base-url: ${HIMEROS_MEDIA_PUBLIC_BASE_URL:http://localhost:8080/media}
+   outbox:
+     fixed-delay-ms: ${HIMEROS_OUTBOX_FIXED_DELAY_MS:1000}
++  discovery:
++    pool-size: ${HIMEROS_DISCOVERY_POOL_SIZE:1000}
++    pool-multiplier: ${HIMEROS_DISCOVERY_POOL_MULTIPLIER:20}
++    non-strict-radius-km: ${HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM:250}
++    max-retrieval-radius-km: ${HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM:1000}
++    cache-ttl: ${HIMEROS_DISCOVERY_CACHE_TTL:45s}
++    view-cooldown: ${HIMEROS_DISCOVERY_VIEW_COOLDOWN:24h}
++    pass-cooldown: ${HIMEROS_DISCOVERY_PASS_COOLDOWN:14d}
++    like-cooldown: ${HIMEROS_DISCOVERY_LIKE_COOLDOWN:30d}
++    super-like-cooldown: ${HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN:30d}
++    unmatch-cooldown: ${HIMEROS_DISCOVERY_UNMATCH_COOLDOWN:90d}
++    cold-start-interactions: ${HIMEROS_DISCOVERY_COLD_START_INTERACTIONS:20}
++    implicit-history-limit: ${HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT:200}
++    new-profile-days: ${HIMEROS_DISCOVERY_NEW_PROFILE_DAYS:7}
++    new-profile-share: ${HIMEROS_DISCOVERY_NEW_PROFILE_SHARE:0.10}
++    exploration-share: ${HIMEROS_DISCOVERY_EXPLORATION_SHARE:0.05}
++    diversification-penalty: ${HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY:0.12}
++    explain-enabled: ${HIMEROS_DISCOVERY_EXPLAIN_ENABLED:false}
+diff --git a/backend/src/main/resources/db/migration/V3__discovery_engine_v2.sql b/backend/src/main/resources/db/migration/V3__discovery_engine_v2.sql
+new file mode 100644
+index 0000000..cf77f1f
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V3__discovery_engine_v2.sql
+@@ -0,0 +1,46 @@
++CREATE EXTENSION IF NOT EXISTS postgis;
++
++ALTER TABLE profiles
++  ADD COLUMN last_active_at TIMESTAMPTZ;
++
++UPDATE profiles
++SET last_active_at = COALESCE(updated_at, created_at, NOW())
++WHERE last_active_at IS NULL;
++
++ALTER TABLE profiles
++  ALTER COLUMN last_active_at SET NOT NULL,
++  ALTER COLUMN last_active_at SET DEFAULT NOW();
++
++CREATE INDEX idx_profiles_discovery_active
++  ON profiles(discoverable, last_active_at DESC, updated_at DESC);
++
++CREATE INDEX idx_profiles_location_gist
++  ON profiles
++  USING GIST ((ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography))
++  WHERE longitude IS NOT NULL AND latitude IS NOT NULL;
++
++ALTER TABLE interactions DROP CONSTRAINT IF EXISTS uq_interaction_pair;
++
++CREATE INDEX idx_interactions_actor_created
++  ON interactions(actor_id, created_at DESC);
++
++CREATE INDEX idx_interactions_actor_target_created
++  ON interactions(actor_id, target_id, created_at DESC);
++
++-- Supporting indexes for behavior/safety queries used by the ranking context.
++CREATE INDEX idx_messages_sender_conversation_sent
++  ON messages(sender_id, conversation_id, sent_at DESC);
++
++CREATE INDEX idx_reports_reporter_created
++  ON reports(reporter_id, created_at DESC);
++
++CREATE INDEX idx_reports_reported_reporter
++  ON reports(reported_id, reporter_id);
++
++CREATE INDEX idx_matches_user_a_unmatched
++  ON matches(user_a, unmatched_at DESC)
++  WHERE status = 'UNMATCHED';
++
++CREATE INDEX idx_matches_user_b_unmatched
++  ON matches(user_b, unmatched_at DESC)
++  WHERE status = 'UNMATCHED';
+diff --git a/backend/src/test/java/com/himeros/interaction/InteractionServiceCooldownTest.java b/backend/src/test/java/com/himeros/interaction/InteractionServiceCooldownTest.java
+new file mode 100644
+index 0000000..7bc10fc
+--- /dev/null
++++ b/backend/src/test/java/com/himeros/interaction/InteractionServiceCooldownTest.java
+@@ -0,0 +1,56 @@
++package com.himeros.interaction;
++
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.*;
++
++import com.himeros.identity.IdentityLookup;
++import com.himeros.shared.DiscoveryCooldownProperties;
++import com.himeros.shared.outbox.OutboxService;
++import java.time.Instant;
++import java.time.temporal.ChronoUnit;
++import java.util.Optional;
++import java.util.UUID;
++import org.junit.jupiter.api.Test;
++import org.springframework.context.ApplicationEventPublisher;
++
++class InteractionServiceCooldownTest {
++    @Test
++    void viewCannotWeakenAnActiveLikeCooldown() {
++        InteractionRepository repo = mock(InteractionRepository.class);
++        IdentityLookup identity = mock(IdentityLookup.class);
++        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
++        OutboxService outbox = mock(OutboxService.class);
++        DiscoveryCooldownProperties cooldowns = new DiscoveryCooldownProperties();
++        InteractionService service = new InteractionService(repo, identity, events, outbox, cooldowns);
++        UUID actor = UUID.randomUUID(), target = UUID.randomUUID();
++        Interaction like = mock(Interaction.class);
++        when(identity.exists(target)).thenReturn(true);
++        when(like.type()).thenReturn(Interaction.Type.LIKE);
++        when(like.createdAt()).thenReturn(Instant.now().minus(2, ChronoUnit.DAYS));
++        when(repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target)).thenReturn(Optional.of(like));
++
++        service.recordView(actor, target);
++
++        verify(repo, never()).save(any());
++    }
++
++    @Test
++    void viewIsRecordedAfterPreviousDecisionCooldownExpires() {
++        InteractionRepository repo = mock(InteractionRepository.class);
++        IdentityLookup identity = mock(IdentityLookup.class);
++        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
++        OutboxService outbox = mock(OutboxService.class);
++        DiscoveryCooldownProperties cooldowns = new DiscoveryCooldownProperties();
++        InteractionService service = new InteractionService(repo, identity, events, outbox, cooldowns);
++        UUID actor = UUID.randomUUID(), target = UUID.randomUUID();
++        Interaction pass = mock(Interaction.class);
++        when(identity.exists(target)).thenReturn(true);
++        when(pass.type()).thenReturn(Interaction.Type.PASS);
++        when(pass.createdAt()).thenReturn(Instant.now().minus(20, ChronoUnit.DAYS));
++        when(repo.findFirstByActorIdAndTargetIdOrderByCreatedAtDesc(actor, target)).thenReturn(Optional.of(pass));
++
++        service.recordView(actor, target);
++
++        verify(repo).save(any(Interaction.class));
++    }
++}
+diff --git a/backend/src/test/java/com/himeros/match/MatchLifecycleTest.java b/backend/src/test/java/com/himeros/match/MatchLifecycleTest.java
+new file mode 100644
+index 0000000..eaf23d7
+--- /dev/null
++++ b/backend/src/test/java/com/himeros/match/MatchLifecycleTest.java
+@@ -0,0 +1,19 @@
++package com.himeros.match;
++
++import static org.junit.jupiter.api.Assertions.*;
++import java.util.UUID;
++import org.junit.jupiter.api.Test;
++
++class MatchLifecycleTest {
++    @Test
++    void unmatchedPairCanBeReactivatedAfterDiscoveryCooldown() {
++        Match match = new Match(UUID.randomUUID(), UUID.randomUUID());
++        match.unmatch();
++        assertEquals(Match.Status.UNMATCHED, match.status());
++        assertNotNull(match.unmatchedAt());
++
++        match.reactivate();
++        assertEquals(Match.Status.ACTIVE, match.status());
++        assertNull(match.unmatchedAt());
++    }
++}
+diff --git a/backend/src/test/java/com/himeros/recommendation/CandidateRetrievalServiceTest.java b/backend/src/test/java/com/himeros/recommendation/CandidateRetrievalServiceTest.java
+new file mode 100644
+index 0000000..719f020
+--- /dev/null
++++ b/backend/src/test/java/com/himeros/recommendation/CandidateRetrievalServiceTest.java
+@@ -0,0 +1,57 @@
++package com.himeros.recommendation;
++
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.*;
++import static org.mockito.Mockito.*;
++
++import com.himeros.profile.*;
++import java.time.*;
++import java.util.*;
++import org.junit.jupiter.api.Test;
++
++class CandidateRetrievalServiceTest {
++    @Test
++    void sparseNonStrictMarketExpandsGeoRetrievalInsteadOfReturningEmptyFeed() {
++        ProfileQuery profiles = mock(ProfileQuery.class);
++        CandidatePoolCache cache = mock(CandidatePoolCache.class);
++        RecommendationProperties props = new RecommendationProperties();
++        props.setPoolSize(1000);
++        props.setNonStrictRadiusKm(250);
++        props.setMaxRetrievalRadiusKm(1000);
++        when(cache.get(anyString())).thenReturn(Optional.empty());
++
++        var me = p(UUID.randomUUID(), false, false, 50);
++        var farCandidate = p(UUID.randomUUID(), false, false, 100);
++        when(profiles.candidatePool(eq(me.userId()), eq(me.latitude()), eq(me.longitude()), eq(250), eq(false), anyInt()))
++            .thenReturn(List.of());
++        when(profiles.candidatePool(eq(me.userId()), eq(me.latitude()), eq(me.longitude()), eq(1000), eq(false), anyInt()))
++            .thenReturn(List.of(farCandidate));
++
++        var result = new CandidateRetrievalService(profiles, cache, props).retrieve(me, 20);
++
++        assertEquals(List.of(farCandidate), result);
++        verify(profiles).candidatePool(eq(me.userId()), eq(me.latitude()), eq(me.longitude()), eq(1000), eq(false), anyInt());
++    }
++
++    @Test
++    void globalModeDoesNotApplyGeoRadius() {
++        ProfileQuery profiles = mock(ProfileQuery.class);
++        CandidatePoolCache cache = mock(CandidatePoolCache.class);
++        RecommendationProperties props = new RecommendationProperties();
++        when(cache.get(anyString())).thenReturn(Optional.empty());
++        var me = p(UUID.randomUUID(), true, true, 1);
++        when(profiles.candidatePool(eq(me.userId()), eq(me.latitude()), eq(me.longitude()), isNull(), eq(true), anyInt()))
++            .thenReturn(List.of());
++
++        new CandidateRetrievalService(profiles, cache, props).retrieve(me, 20);
++
++        verify(profiles).candidatePool(eq(me.userId()), eq(me.latitude()), eq(me.longitude()), isNull(), eq(true), anyInt());
++    }
++
++    private static ProfileQuery.ProfileView p(UUID id, boolean global, boolean strictDistance, int distance) {
++        Instant now = Instant.parse("2026-08-19T12:00:00Z");
++        return new ProfileQuery.ProfileView(id, "User", "Bio", LocalDate.of(1995, 1, 1), Gender.MAN, null,
++            "Blumenau", "SC", "BR", -26.9, -49.0, 18, 99, distance, false, strictDistance, true, false, global,
++            Set.of("tech"), Set.of(Gender.WOMAN), Set.of(), now.minus(Duration.ofDays(30)), now, now);
++    }
++}
+diff --git a/backend/src/test/java/com/himeros/recommendation/DiscoveryCursorCodecTest.java b/backend/src/test/java/com/himeros/recommendation/DiscoveryCursorCodecTest.java
+new file mode 100644
+index 0000000..c6adbc4
+--- /dev/null
++++ b/backend/src/test/java/com/himeros/recommendation/DiscoveryCursorCodecTest.java
+@@ -0,0 +1,18 @@
++package com.himeros.recommendation;
++
++import static org.junit.jupiter.api.Assertions.*;
++import java.util.UUID;
++import org.junit.jupiter.api.Test;
++
++class DiscoveryCursorCodecTest {
++    private final DiscoveryCursorCodec codec = new DiscoveryCursorCodec();
++
++    @Test void roundTripsOpaqueCursor() {
++        UUID id = UUID.randomUUID();
++        assertEquals(id, codec.decode(codec.encode(id)).orElseThrow());
++    }
++
++    @Test void invalidCursorDoesNotCrashFeed() {
++        assertTrue(codec.decode("not-a-valid-cursor").isEmpty());
++    }
++}
+diff --git a/backend/src/test/java/com/himeros/recommendation/ImplicitPreferenceServiceTest.java b/backend/src/test/java/com/himeros/recommendation/ImplicitPreferenceServiceTest.java
+new file mode 100644
+index 0000000..266a1cc
+--- /dev/null
++++ b/backend/src/test/java/com/himeros/recommendation/ImplicitPreferenceServiceTest.java
+@@ -0,0 +1,20 @@
++package com.himeros.recommendation;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import org.junit.jupiter.api.Test;
++
++class ImplicitPreferenceServiceTest {
++    @Test
++    void behaviorWeightsStayExplicitAndExplainable() {
++        assertEquals(0.05, ImplicitPreferenceService.signalWeight(BehaviorSignalType.VIEW));
++        assertEquals(1.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.LIKE));
++        assertEquals(2.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.SUPER_LIKE));
++        assertEquals(3.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.MATCH));
++        assertEquals(4.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.MESSAGE));
++        assertEquals(6.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.CONVERSATION));
++        assertEquals(-0.50, ImplicitPreferenceService.signalWeight(BehaviorSignalType.PASS));
++        assertEquals(-3.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.UNMATCH));
++        assertEquals(-8.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.BLOCK));
++        assertEquals(-10.00, ImplicitPreferenceService.signalWeight(BehaviorSignalType.REPORT));
++    }
++}
+diff --git a/backend/src/test/java/com/himeros/recommendation/RecommendationServiceTest.java b/backend/src/test/java/com/himeros/recommendation/RecommendationServiceTest.java
+index 317f5ba..a96b16c 100755
+--- a/backend/src/test/java/com/himeros/recommendation/RecommendationServiceTest.java
++++ b/backend/src/test/java/com/himeros/recommendation/RecommendationServiceTest.java
+@@ -1,189 +1,211 @@
+ package com.himeros.recommendation;
+ 
+ import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.*;
+ import static org.mockito.Mockito.*;
+ 
+ import com.himeros.interaction.InteractionQuery;
++import com.himeros.match.MatchQuery;
+ import com.himeros.profile.*;
+ import com.himeros.trustsafety.TrustSafetyQuery;
+-import java.time.LocalDate;
++import com.himeros.shared.DiscoveryCooldownProperties;
++import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
++import java.time.*;
+ import java.util.*;
+ import org.junit.jupiter.api.Test;
+ 
+ class RecommendationServiceTest {
++    private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
++    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+ 
+     @Test
+-    void excludesAlreadySeenUsers() {
++    void twoBrowsersCanDiscoverEachOtherUsingViewerPreferencesOnly() {
+         Fixture f = new Fixture();
+-        UUID me = UUID.randomUUID(), seen = UUID.randomUUID(), fresh = UUID.randomUUID();
+-        var pMe = p(me, "Me", Gender.MAN, Set.of(Gender.WOMAN));
+-        var pSeen = p(seen, "Seen", Gender.WOMAN, Set.of(Gender.MAN));
+-        var pFresh = p(fresh, "Fresh", Gender.WOMAN, Set.of(Gender.MAN));
++        UUID manId = UUID.randomUUID(), womanId = UUID.randomUUID();
++        var man = p(manId, "Man", Gender.MAN, Set.of(Gender.WOMAN), BodyType.ATHLETIC, true);
++        // Candidate preference is intentionally non-reciprocal. It must not control the man's feed.
++        var woman = p(womanId, "Woman", Gender.WOMAN, Set.of(Gender.WOMAN), BodyType.SLIM, true);
+ 
+-        f.stub(me, pMe, List.of(pSeen, pFresh), Set.of(seen), Set.of());
++        f.stub(manId, man, List.of(woman), List.of());
++        assertEquals(womanId, f.service.discover(manId, 20).getFirst().profile().userId());
+ 
+-        var result = f.service().discover(me, 20);
+-
+-        assertEquals(1, result.size());
+-        assertEquals(fresh, result.getFirst().profile().userId());
++        var womanLookingForMan = withLookingFor(woman, Set.of(Gender.MAN));
++        f.stub(womanId, womanLookingForMan, List.of(man), List.of());
++        assertEquals(manId, f.service.discover(womanId, 20).getFirst().profile().userId());
+     }
+ 
+     @Test
+-    void viewerPreferencesControlFeedWithoutReciprocalCandidateFiltering() {
++    void passUsesCooldownInsteadOfPermanentSeenExclusion() {
+         Fixture f = new Fixture();
+-        UUID manId = UUID.randomUUID();
+-        UUID womanId = UUID.randomUUID();
+-
+-        var man = p(manId, "Man", Gender.MAN, Set.of(Gender.WOMAN));
+-        // Simulates an old/default onboarding value on the candidate. This must
+-        // not hide her from a man whose own feed is configured to show women.
+-        var womanWithNonReciprocalPreference = p(womanId, "Woman", Gender.WOMAN, Set.of(Gender.WOMAN));
+-
+-        f.stub(manId, man, List.of(womanWithNonReciprocalPreference), Set.of(), Set.of());
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true);
++        var candidate = p(candidateId, "Candidate", Gender.WOMAN, Set.of(Gender.MAN), null, true);
+ 
+-        var result = f.service().discover(manId, 20);
++        f.stub(meId, me, List.of(candidate), List.of(new InteractionQuery.InteractionView(candidateId, "PASS", NOW.minus(Duration.ofDays(3)))));
++        assertTrue(f.service.discover(meId, 20).isEmpty());
++        assertEquals("INTERACTION_COOLDOWN", f.service.explain(meId, candidateId).excludedBy());
+ 
+-        assertEquals(1, result.size());
+-        assertEquals(womanId, result.getFirst().profile().userId());
++        f.stub(meId, me, List.of(candidate), List.of(new InteractionQuery.InteractionView(candidateId, "PASS", NOW.minus(Duration.ofDays(20)))));
++        assertEquals(1, f.service.discover(meId, 20).size());
+     }
+ 
+     @Test
+-    void twoAccountsCanDiscoverEachOtherUsingEachViewersOwnPreferences() {
++    void activeMatchIsNeverReturnedAndRecentUnmatchIsCooledDown() {
+         Fixture f = new Fixture();
+-        UUID manId = UUID.randomUUID();
+-        UUID womanId = UUID.randomUUID();
+-
+-        var man = p(manId, "Man", Gender.MAN, Set.of(Gender.WOMAN));
+-        var woman = p(womanId, "Woman", Gender.WOMAN, Set.of(Gender.MAN));
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true);
++        var candidate = p(candidateId, "Candidate", Gender.WOMAN, Set.of(Gender.MAN), null, true);
++        f.stub(meId, me, List.of(candidate), List.of());
+ 
+-        f.stub(manId, man, List.of(woman), Set.of(), Set.of());
+-        assertEquals(womanId, f.service().discover(manId, 20).getFirst().profile().userId());
++        when(f.matches.activeCounterparts(meId)).thenReturn(Set.of(candidateId));
++        assertEquals("ACTIVE_MATCH", f.service.explain(meId, candidateId).excludedBy());
+ 
+-        f.stub(womanId, woman, List.of(man), Set.of(), Set.of());
+-        assertEquals(manId, f.service().discover(womanId, 20).getFirst().profile().userId());
++        when(f.matches.activeCounterparts(meId)).thenReturn(Set.of());
++        when(f.matches.unmatchedSince(eq(meId), any())).thenReturn(Set.of(candidateId));
++        assertEquals("UNMATCH_COOLDOWN", f.service.explain(meId, candidateId).excludedBy());
+     }
+ 
+     @Test
+-    void strictAgeAndDistanceApplyOnlyToViewerFeed() {
++    void preferredBodyTypeIsSoftRankingSignalNotHardExclusion() {
+         Fixture f = new Fixture();
+-        UUID meId = UUID.randomUUID();
+-        UUID candidateId = UUID.randomUUID();
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = withPreferredBodyTypes(p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), BodyType.ATHLETIC, true), Set.of(BodyType.ATHLETIC));
++        var slimCandidate = p(candidateId, "Slim", Gender.WOMAN, Set.of(Gender.MAN), BodyType.SLIM, true);
++        f.stub(meId, me, List.of(slimCandidate), List.of());
+ 
+-        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN),
+-            25, 35, 5, true, true, false, true,
+-            -26.9000, -49.0000, null, Set.of());
+-        var farCandidate = p(candidateId, "Far", Gender.WOMAN, Set.of(Gender.MAN),
+-            18, 99, 500, false, false, false, true,
+-            -27.6000, -48.5500, null, Set.of());
+-
+-        f.stub(meId, me, List.of(farCandidate), Set.of(), Set.of());
+-
+-        assertTrue(f.service().discover(meId, 20).isEmpty());
++        var result = f.service.discover(meId, 20);
++        assertEquals(1, result.size());
++        assertEquals(candidateId, result.getFirst().profile().userId());
+     }
+ 
+     @Test
+-    void globalModeBypassesStrictDistanceButKeepsOtherViewerFilters() {
++    void globalModeBypassesStrictDistance() {
+         Fixture f = new Fixture();
+-        UUID meId = UUID.randomUUID();
+-        UUID candidateId = UUID.randomUUID();
+-
+-        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN),
+-            18, 99, 1, false, true, true, true,
+-            -26.9000, -49.0000, null, Set.of());
+-        var farCandidate = p(candidateId, "Far", Gender.WOMAN, Set.of(Gender.MAN),
+-            18, 99, 1, false, true, false, true,
+-            -23.5505, -46.6333, null, Set.of());
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true,
++            18, 99, 1, false, true, true, -26.9, -49.0);
++        var far = p(candidateId, "Far", Gender.WOMAN, Set.of(Gender.MAN), null, true,
++            18, 99, 100, false, false, false, -23.55, -46.63);
++        f.stub(meId, me, List.of(far), List.of());
++        assertEquals(1, f.service.discover(meId, 20).size());
++    }
+ 
+-        f.stub(meId, me, List.of(farCandidate), Set.of(), Set.of());
++    @Test
++    void strictAgeStillWorksAsHardEligibilityRule() {
++        Fixture f = new Fixture();
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true,
++            25, 30, 100, true, false, false, -26.9, -49.0);
++        var older = new ProfileQuery.ProfileView(candidateId, "Older", "Bio longa o suficiente para qualidade", NOW.atZone(ZoneOffset.UTC).toLocalDate().minusYears(40),
++            Gender.WOMAN, BodyType.ATHLETIC, "Blumenau", "SC", "BR", -26.91, -49.01,
++            18, 99, 100, false, false, true, false, false, Set.of("java", "trilhas"), Set.of(Gender.MAN), Set.of(),
++            NOW.minus(Duration.ofDays(100)), NOW.minus(Duration.ofHours(1)), NOW.minus(Duration.ofHours(1)));
++        f.stub(meId, me, List.of(older), List.of());
++        assertEquals("STRICT_AGE", f.service.explain(meId, candidateId).excludedBy());
++    }
+ 
+-        assertEquals(1, f.service().discover(meId, 20).size());
++    @Test
++    void explainReturnsFeatureBreakdownForEligibleCandidate() {
++        Fixture f = new Fixture();
++        UUID meId = UUID.randomUUID(), candidateId = UUID.randomUUID();
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), BodyType.ATHLETIC, true);
++        var candidate = p(candidateId, "Candidate", Gender.WOMAN, Set.of(Gender.MAN), BodyType.ATHLETIC, true);
++        f.stub(meId, me, List.of(candidate), List.of());
++
++        var explanation = f.service.explain(meId, candidateId);
++        assertTrue(explanation.eligible());
++        assertNotNull(explanation.score());
++        assertTrue(explanation.features().containsKey("distance"));
++        assertTrue(explanation.features().containsKey("interests"));
++        assertTrue(explanation.weights().containsKey("activity"));
++        assertTrue(explanation.coldStart());
+     }
+ 
+     @Test
+-    void nonDiscoverableCandidateNeverAppears() {
++    void cursorPageContinuesAfterLastCandidate() {
+         Fixture f = new Fixture();
+         UUID meId = UUID.randomUUID();
+-        UUID candidateId = UUID.randomUUID();
+-
+-        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN));
+-        var hidden = p(candidateId, "Hidden", Gender.WOMAN, Set.of(Gender.MAN),
+-            18, 99, 100, false, false, false, false,
+-            -26.9, -49.0, null, Set.of());
++        var me = p(meId, "Me", Gender.MAN, Set.of(Gender.WOMAN), null, true);
++        List<ProfileQuery.ProfileView> candidates = new ArrayList<>();
++        for (int i = 0; i < 6; i++) candidates.add(p(UUID.randomUUID(), "Candidate " + i, Gender.WOMAN, Set.of(Gender.MAN), null, true));
++        f.stub(meId, me, candidates, List.of());
++
++        var first = f.service.discoverPage(meId, 3, null);
++        assertEquals(3, first.items().size());
++        assertNotNull(first.nextCursor());
++        var second = f.service.discoverPage(meId, 3, first.nextCursor());
++        assertFalse(second.items().isEmpty());
++        assertTrue(Collections.disjoint(first.items().stream().map(x -> x.profile().userId()).toList(),
++            second.items().stream().map(x -> x.profile().userId()).toList()));
++    }
+ 
+-        f.stub(meId, me, List.of(hidden), Set.of(), Set.of());
++    private static ProfileQuery.ProfileView p(UUID id, String name, Gender gender, Set<Gender> lookingFor, BodyType bodyType, boolean discoverable) {
++        return p(id, name, gender, lookingFor, bodyType, discoverable, 18, 99, 100, false, false, false, -26.9, -49.0);
++    }
+ 
+-        assertTrue(f.service().discover(meId, 20).isEmpty());
++    private static ProfileQuery.ProfileView p(UUID id, String name, Gender gender, Set<Gender> lookingFor, BodyType bodyType,
++            boolean discoverable, int minAge, int maxAge, int maxDistance, boolean strictAge, boolean strictDistance,
++            boolean globalMode, Double lat, Double lon) {
++        return new ProfileQuery.ProfileView(id, name, "Uma bio completa com interesses e contexto suficiente para o perfil.",
++            LocalDate.ofInstant(NOW, ZoneOffset.UTC).minusYears(30), gender, bodyType, "Blumenau", "SC", "BR", lat, lon,
++            minAge, maxAge, maxDistance, strictAge, strictDistance, discoverable, false, globalMode,
++            Set.of("java", "trilhas", "viagens"), lookingFor, Set.of(),
++            NOW.minus(Duration.ofDays(30)), NOW.minus(Duration.ofHours(2)), NOW.minus(Duration.ofHours(1)));
+     }
+ 
+-    private static ProfileQuery.ProfileView p(UUID id, String name, Gender gender, Set<Gender> lookingFor) {
+-        return p(id, name, gender, lookingFor,
+-            18, 99, 100, false, false, false, true,
+-            -26.9, -49.0, null, Set.of());
++
++    private static ProfileQuery.ProfileView withPreferredBodyTypes(ProfileQuery.ProfileView p, Set<BodyType> preferred) {
++        return new ProfileQuery.ProfileView(p.userId(), p.displayName(), p.bio(), p.birthDate(), p.gender(), p.bodyType(),
++            p.city(), p.state(), p.country(), p.latitude(), p.longitude(), p.minAge(), p.maxAge(), p.maxDistanceKm(),
++            p.strictAge(), p.strictDistance(), p.discoverable(), p.recentlyActiveFirst(), p.globalMode(), p.interests(),
++            p.lookingFor(), preferred, p.createdAt(), p.updatedAt(), p.lastActiveAt());
+     }
+ 
+-    private static ProfileQuery.ProfileView p(
+-        UUID id,
+-        String name,
+-        Gender gender,
+-        Set<Gender> lookingFor,
+-        int minAge,
+-        int maxAge,
+-        int maxDistanceKm,
+-        boolean strictAge,
+-        boolean strictDistance,
+-        boolean globalMode,
+-        boolean discoverable,
+-        Double latitude,
+-        Double longitude,
+-        BodyType bodyType,
+-        Set<BodyType> preferredBodyTypes
+-    ) {
+-        return new ProfileQuery.ProfileView(
+-            id,
+-            name,
+-            null,
+-            LocalDate.now().minusYears(30),
+-            gender,
+-            bodyType,
+-            "Blumenau",
+-            "SC",
+-            "BR",
+-            latitude,
+-            longitude,
+-            minAge,
+-            maxAge,
+-            maxDistanceKm,
+-            strictAge,
+-            strictDistance,
+-            discoverable,
+-            false,
+-            globalMode,
+-            Set.of("java"),
+-            lookingFor,
+-            preferredBodyTypes
+-        );
++    private static ProfileQuery.ProfileView withLookingFor(ProfileQuery.ProfileView p, Set<Gender> lookingFor) {
++        return new ProfileQuery.ProfileView(p.userId(), p.displayName(), p.bio(), p.birthDate(), p.gender(), p.bodyType(),
++            p.city(), p.state(), p.country(), p.latitude(), p.longitude(), p.minAge(), p.maxAge(), p.maxDistanceKm(),
++            p.strictAge(), p.strictDistance(), p.discoverable(), p.recentlyActiveFirst(), p.globalMode(), p.interests(),
++            lookingFor, p.preferredBodyTypes(), p.createdAt(), p.updatedAt(), p.lastActiveAt());
+     }
+ 
+     private static final class Fixture {
+-        private final ProfileQuery profiles = mock(ProfileQuery.class);
+-        private final InteractionQuery interactions = mock(InteractionQuery.class);
+-        private final TrustSafetyQuery safety = mock(TrustSafetyQuery.class);
+-
+-        RecommendationService service() {
+-            return new RecommendationService(profiles, interactions, safety);
+-        }
+-
+-        void stub(
+-            UUID me,
+-            ProfileQuery.ProfileView self,
+-            List<ProfileQuery.ProfileView> candidates,
+-            Set<UUID> seen,
+-            Set<UUID> excluded
+-        ) {
++        final ProfileQuery profiles = mock(ProfileQuery.class);
++        final InteractionQuery interactions = mock(InteractionQuery.class);
++        final TrustSafetyQuery safety = mock(TrustSafetyQuery.class);
++        final MatchQuery matches = mock(MatchQuery.class);
++        final CandidateRetrievalService retrieval = mock(CandidateRetrievalService.class);
++        final RecommendationProperties properties = new RecommendationProperties();
++        final DiscoveryCooldownProperties cooldownProperties = new DiscoveryCooldownProperties();
++        final CooldownPolicy cooldown = new CooldownPolicy(cooldownProperties);
++        final EligibilityService eligibility = new EligibilityService(cooldown);
++        final ImplicitPreferenceService implicit = new ImplicitPreferenceService(profiles, properties);
++        final BehaviorSignalService behavior = mock(BehaviorSignalService.class);
++        final FeatureBuilder features = new FeatureBuilder(implicit, properties);
++        final RankingService ranking = new RankingService();
++        final DiversificationService diversification = new DiversificationService(properties);
++        final ExplorationService exploration = new ExplorationService(properties);
++        final DiscoveryCursorCodec cursors = new DiscoveryCursorCodec();
++        final DiscoveryMetrics metrics = new DiscoveryMetrics(new SimpleMeterRegistry());
++        final RecommendationService service = new RecommendationService(profiles, interactions, safety, matches, retrieval,
++            eligibility, features, ranking, diversification, exploration, implicit, behavior, cursors, properties, metrics, CLOCK);
++
++        void stub(UUID me, ProfileQuery.ProfileView self, List<ProfileQuery.ProfileView> candidates,
++                  List<InteractionQuery.InteractionView> history) {
+             when(profiles.find(me)).thenReturn(Optional.of(self));
+-            when(profiles.candidatePool(eq(me), anyInt())).thenReturn(candidates);
+-            when(interactions.seenBy(me)).thenReturn(seen);
+-            when(safety.excluded(me)).thenReturn(excluded);
++            for (var candidate : candidates) when(profiles.find(candidate.userId())).thenReturn(Optional.of(candidate));
++            when(retrieval.retrieve(eq(self), anyInt())).thenReturn(candidates);
++            when(interactions.recentBy(eq(me), anyInt())).thenReturn(history);
++            Map<UUID, InteractionQuery.InteractionView> latest = new HashMap<>();
++            for (InteractionQuery.InteractionView item : history) latest.putIfAbsent(item.targetId(), item);
++            when(interactions.latestBy(eq(me), anyCollection())).thenReturn(Map.copyOf(latest));
++            when(behavior.recent(eq(me), anyInt())).thenReturn(history.stream().map(i -> new BehaviorSignal(i.targetId(), BehaviorSignalType.valueOf(i.type()), i.createdAt())).toList());
++            when(safety.excluded(me)).thenReturn(Set.of());
++            when(matches.activeCounterparts(me)).thenReturn(Set.of());
++            when(matches.unmatchedSince(eq(me), any())).thenReturn(Set.of());
++            when(profiles.findMany(anyCollection())).thenAnswer(invocation -> {
++                Collection<UUID> requested = invocation.getArgument(0);
++                return candidates.stream().filter(p -> requested.contains(p.userId())).toList();
++            });
+         }
+     }
+ }
+diff --git a/docker-compose.yml b/docker-compose.yml
+index a274dbb..5dec38c 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -1,6 +1,8 @@
+ services:
+   postgres:
+-    image: postgres:17-alpine
++    build:
++      context: ./docker/postgres
++    image: himeros-postgres-postgis:17
+     environment:
+       POSTGRES_DB: himeros
+       POSTGRES_USER: himeros
+@@ -48,6 +50,23 @@ services:
+       HIMEROS_SECURITY_COOKIE_SECURE: "false"
+       HIMEROS_CORS_ALLOWED_ORIGINS: http://localhost:4200
+       HIMEROS_MEDIA_DIRECTORY: /app/data/media
++      HIMEROS_DISCOVERY_POOL_SIZE: ${HIMEROS_DISCOVERY_POOL_SIZE:-1000}
++      HIMEROS_DISCOVERY_POOL_MULTIPLIER: ${HIMEROS_DISCOVERY_POOL_MULTIPLIER:-20}
++      HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM: ${HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM:-250}
++      HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM: ${HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM:-1000}
++      HIMEROS_DISCOVERY_CACHE_TTL: ${HIMEROS_DISCOVERY_CACHE_TTL:-45s}
++      HIMEROS_DISCOVERY_VIEW_COOLDOWN: ${HIMEROS_DISCOVERY_VIEW_COOLDOWN:-24h}
++      HIMEROS_DISCOVERY_PASS_COOLDOWN: ${HIMEROS_DISCOVERY_PASS_COOLDOWN:-14d}
++      HIMEROS_DISCOVERY_LIKE_COOLDOWN: ${HIMEROS_DISCOVERY_LIKE_COOLDOWN:-30d}
++      HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN: ${HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN:-30d}
++      HIMEROS_DISCOVERY_UNMATCH_COOLDOWN: ${HIMEROS_DISCOVERY_UNMATCH_COOLDOWN:-90d}
++      HIMEROS_DISCOVERY_COLD_START_INTERACTIONS: ${HIMEROS_DISCOVERY_COLD_START_INTERACTIONS:-20}
++      HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT: ${HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT:-200}
++      HIMEROS_DISCOVERY_NEW_PROFILE_DAYS: ${HIMEROS_DISCOVERY_NEW_PROFILE_DAYS:-7}
++      HIMEROS_DISCOVERY_NEW_PROFILE_SHARE: ${HIMEROS_DISCOVERY_NEW_PROFILE_SHARE:-0.10}
++      HIMEROS_DISCOVERY_EXPLORATION_SHARE: ${HIMEROS_DISCOVERY_EXPLORATION_SHARE:-0.05}
++      HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY: ${HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY:-0.12}
++      HIMEROS_DISCOVERY_EXPLAIN_ENABLED: ${HIMEROS_DISCOVERY_EXPLAIN_ENABLED:-true}
+       HIMEROS_MEDIA_PUBLIC_BASE_URL: http://localhost:4200/media
+     volumes: [media_data:/app/data/media]
+     ports: ["8080:8080"]
+diff --git a/docker/postgres/Dockerfile b/docker/postgres/Dockerfile
+new file mode 100644
+index 0000000..2abb671
+--- /dev/null
++++ b/docker/postgres/Dockerfile
+@@ -0,0 +1,7 @@
++FROM postgres:17-bookworm
++
++RUN apt-get update \
++    && apt-get install -y --no-install-recommends \
++        postgresql-17-postgis-3 \
++        postgresql-17-postgis-3-scripts \
++    && rm -rf /var/lib/apt/lists/*
+diff --git a/frontend/src/app/core/api/contracts.ts b/frontend/src/app/core/api/contracts.ts
+index eb5909a..3c5e5be 100644
+--- a/frontend/src/app/core/api/contracts.ts
++++ b/frontend/src/app/core/api/contracts.ts
+@@ -68,6 +68,26 @@ export interface Recommendation {
+   distanceKm: number | null;
+ }
+ 
++export interface RecommendationPage {
++  items: Recommendation[];
++  nextCursor: string | null;
++  poolSize: number;
++  eligibleCount: number;
++}
++
++export interface RecommendationExplanation {
++  candidateId: string;
++  eligible: boolean;
++  excludedBy: string;
++  score: number | null;
++  distanceKm: number | null;
++  features: Record<string, number>;
++  weights: Record<string, number>;
++  commonInterests: string[];
++  cooldownUntil: string | null;
++  coldStart: boolean;
++}
++
+ export interface MatchView {
+   id: string;
+   userA: string;
+diff --git a/frontend/src/app/core/api/discovery.api.ts b/frontend/src/app/core/api/discovery.api.ts
+index 24aae08..1d2fb68 100644
+--- a/frontend/src/app/core/api/discovery.api.ts
++++ b/frontend/src/app/core/api/discovery.api.ts
+@@ -1,7 +1,7 @@
+ import { HttpClient } from '@angular/common/http';
+ import { Injectable, inject } from '@angular/core';
+ import { Observable } from 'rxjs';
+-import { InteractionType, Recommendation } from './contracts';
++import { InteractionType, Recommendation, RecommendationExplanation, RecommendationPage } from './contracts';
+ 
+ @Injectable({ providedIn: 'root' })
+ export class DiscoveryApi {
+@@ -11,6 +11,20 @@ export class DiscoveryApi {
+     return this.http.get<Recommendation[]>('/api/v1/discovery', { params: { limit } });
+   }
+ 
++  discoverPage(limit = 24, cursor?: string | null): Observable<RecommendationPage> {
++    const params: Record<string, string | number> = { limit };
++    if (cursor) params['cursor'] = cursor;
++    return this.http.get<RecommendationPage>('/api/v1/discovery/page', { params });
++  }
++
++  markViewed(userId: string): Observable<void> {
++    return this.http.post<void>(`/api/v1/discovery/${userId}/view`, {});
++  }
++
++  explain(userId: string): Observable<RecommendationExplanation> {
++    return this.http.get<RecommendationExplanation>(`/api/v1/discovery/explain/${userId}`);
++  }
++
+   interact(userId: string, type: InteractionType): Observable<unknown> {
+     return this.http.post(`/api/v1/interactions/${userId}`, { type });
+   }
+diff --git a/frontend/src/app/features/discover/discover.page.ts b/frontend/src/app/features/discover/discover.page.ts
+index f3b8f2c..4160a38 100644
+--- a/frontend/src/app/features/discover/discover.page.ts
++++ b/frontend/src/app/features/discover/discover.page.ts
+@@ -101,6 +101,8 @@ export class DiscoverPage implements OnInit {
+   readonly recommendations = signal<Recommendation[]>([]);
+   readonly photosByUser = signal<Record<string, PhotoView[]>>({});
+   readonly actionPending = signal(false);
++  readonly nextCursor = signal<string | null>(null);
++  private readonly viewedThisSession = new Set<string>();
+ 
+   readonly activeRecommendation = computed(() => this.recommendations()[0] ?? null);
+   readonly nextRecommendation = computed(() => this.recommendations()[1] ?? null);
+@@ -147,14 +149,16 @@ export class DiscoverPage implements OnInit {
+     this.loading.set(true);
+     this.error.set('');
+     try {
+-      const data = await firstValueFrom(this.api.discover(24));
+-      this.recommendations.set(data);
+-      const ids = data.map(item => item.profile.userId);
++      const page = await firstValueFrom(this.api.discoverPage(24));
++      this.recommendations.set(page.items);
++      this.nextCursor.set(page.nextCursor);
++      const ids = page.items.map(item => item.profile.userId);
+       if (ids.length) {
+         this.photosByUser.set(await firstValueFrom(this.mediaApi.batch(ids)).catch(() => ({})));
+       } else {
+         this.photosByUser.set({});
+       }
++      void this.markActiveViewed();
+     } catch {
+       this.error.set('Verifique sua conexão e tente novamente.');
+     } finally {
+@@ -181,12 +185,39 @@ export class DiscoverPage implements OnInit {
+     return recommendation.profile.city;
+   }
+ 
++
++  private async markActiveViewed(): Promise<void> {
++    const userId = this.activeRecommendation()?.profile.userId;
++    if (!userId || this.viewedThisSession.has(userId)) return;
++    this.viewedThisSession.add(userId);
++    await firstValueFrom(this.api.markViewed(userId)).catch(() => undefined);
++  }
++
++  private async loadMore(): Promise<void> {
++    const cursor = this.nextCursor();
++    if (!cursor) return;
++    const page = await firstValueFrom(this.api.discoverPage(24, cursor)).catch(() => null);
++    if (!page) return;
++    this.nextCursor.set(page.nextCursor);
++    const existing = new Set(this.recommendations().map(item => item.profile.userId));
++    const fresh = page.items.filter(item => !existing.has(item.profile.userId));
++    if (!fresh.length) return;
++    this.recommendations.update(list => [...list, ...fresh]);
++    const photoIds = fresh.map(item => item.profile.userId);
++    const photos = await firstValueFrom(this.mediaApi.batch(photoIds)).catch(() => ({}));
++    this.photosByUser.update(current => ({ ...current, ...photos }));
++  }
++
+   async onInteract(userId: string, type: 'LIKE' | 'PASS' | 'SUPER_LIKE'): Promise<void> {
+     if (this.actionPending()) return;
+     this.actionPending.set(true);
+     try {
+       await firstValueFrom(this.api.interact(userId, type));
+       this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
++      void this.markActiveViewed();
++      if (this.recommendations().length <= 5 && this.nextCursor()) {
++        await this.loadMore();
++      }
+     } catch {
+       this.error.set('Não foi possível registrar essa ação. Tente novamente.');
+     } finally {
+diff --git a/specs/00-product-spec.md b/specs/00-product-spec.md
+index 1322b10..f5d8bbe 100644
+--- a/specs/00-product-spec.md
++++ b/specs/00-product-spec.md
+@@ -94,3 +94,7 @@ These are design targets, not current benchmark claims.
+ - A match is mutual consent, not simply two independent rows.
+ - Premium is an entitlement domain; UI visibility must never be the authorization mechanism.
+ - Design for future extraction, deploy according to demonstrated need.
++
++### Discovery Engine V2
++
++Discovery uses geo-aware candidate retrieval, hard eligibility, weighted feature ranking, behavioral soft preferences, cooldown-based re-entry, diversification, exploration, cursor pagination, Redis pool caching and explainability. See `specs/11-discovery-engine-v2.md`.
+diff --git a/specs/04-api-contract.md b/specs/04-api-contract.md
+index bb98264..6695a02 100644
+--- a/specs/04-api-contract.md
++++ b/specs/04-api-contract.md
+@@ -62,10 +62,12 @@ Values: `MAN | WOMAN | NON_BINARY | OTHER` (sent in profile `gender` and in `loo
+ ## Discovery / interactions
+ 
+ - `GET /discovery?limit=20`
+-  - filters candidates using the current viewer's `lookingFor`, strict age/distance and preferred body-type settings;
++  - hard filters use the current viewer's `lookingFor`, explicit strict age/distance, safety state, match state and cooldown state;
++  - `preferredBodyTypes`, non-strict age/distance, interests, activity and behavioral affinity are ranking features rather than hard exclusions;
+   - `globalMode=true` bypasses the viewer's strict distance radius;
+   - the candidate's private discovery preferences are not reverse-applied to the viewer's feed;
+-  - candidate must still be `discoverable=true`, not blocked either way and not already seen by the viewer.
++  - candidate must still be `discoverable=true` and not blocked/reported by the viewer;
++  - past interactions re-enter after configurable cooldowns instead of being permanently hidden by `seen`.
+ - `POST /interactions/{targetUserId}`
+ 
+ ```json
+@@ -131,3 +133,12 @@ Plans:
+ - breaking HTTP changes require `/v2` or a migration plan;
+ - event schema breaking changes require a new event type/schema version;
+ - CI should diff OpenAPI and event schemas before merge.
++
++### Discovery Engine V2
++
++- `GET /discovery/page?limit=20&cursor=<opaque>` — cursor page with `items`, `nextCursor`, `poolSize`, `eligibleCount`.
++- `POST /discovery/{candidateId}/view` — impression signal; never overwrites a stronger LIKE/PASS/SUPER_LIKE interaction.
++- `GET /discovery/explain/{candidateId}` — returns eligibility reason, cooldown, normalized ranking features, active weights and final score.
++- `PASS`/`VIEW` are cooldown-based instead of permanent `seen` exclusions.
++- active matches are excluded; unmatched profiles use a configurable cooldown.
++- soft preferences rank candidates; only explicit strict/safety rules hard-filter them.
+diff --git a/specs/11-discovery-engine-v2.md b/specs/11-discovery-engine-v2.md
+new file mode 100644
+index 0000000..a618e17
+--- /dev/null
++++ b/specs/11-discovery-engine-v2.md
+@@ -0,0 +1,201 @@
++# Discovery Engine V2
++
++## Goal
++
++Discovery is a recommendation pipeline, not a single SQL filter. The V2 engine preserves hard safety/visibility rules while ranking soft preferences so sparse markets do not collapse to an empty feed.
++
++## Pipeline
++
++1. **Candidate retrieval** — PostgreSQL/PostGIS returns a bounded geo-aware pool (default 1000). Redis caches candidate IDs for 45 seconds.
++2. **Hard eligibility** — self, hidden profiles, safety exclusions, active matches, recent unmatches, viewer gender preference, strict age, strict distance and interaction cooldowns.
++3. **Feature building** — preference fit, distance decay, activity, Jaccard interest similarity, profile completeness, novelty, implicit preference and deterministic exploration.
++4. **Ranking** — weighted score 0..100. Cold-start and `recentlyActiveFirst` use different weight sets.
++5. **Diversification** — MMR-style penalty prevents near-identical profiles from occupying consecutive positions.
++6. **Exploration** — reserves space for recent profiles and deterministic serendipity candidates.
++7. **Cursor page** — opaque cursor continues after the last candidate while the legacy list endpoint remains compatible.
++
++## Hard rules
++
++Only rules that must exclude a candidate belong in eligibility:
++
++- candidate is not the viewer;
++- `discoverable=true`;
++- no block/report exclusion;
++- no active match;
++- unmatch cooldown has elapsed;
++- candidate gender is in the viewer's `lookingFor` when configured;
++- age only excludes when viewer `strictAge=true`;
++- distance only excludes when viewer `strictDistance=true` and `globalMode=false`;
++- action cooldown has elapsed.
++
++The candidate's private preferences are **never reverse-applied** to the viewer's feed.
++
++`preferredBodyTypes`, non-strict age/distance and behavioral affinity are soft ranking features, never silent hard filters.
++
++## Ranking features
++
++All features are normalized to 0..1 before weighting.
++
++- `preference`: non-strict age + preferred body type fit;
++- `distance`: exponential distance decay (global mode uses a much slower decay);
++- `activity`: `lastActiveAt` buckets, updated from authenticated activity with a 5 minute database write throttle;
++- `interests`: case-insensitive Jaccard similarity;
++- `profileQuality`: bio, location, body type, interests and coordinates completeness;
++- `novelty`: unseen/new profile boost and gradual re-entry after old interactions;
++- `implicitPreference`: learned soft affinity from behavior;
++- `exploration`: deterministic per viewer/candidate/day to avoid refresh instability.
++
++### Default non-cold-start weights
++
++| Feature | Weight |
++|---|---:|
++| preference | 0.30 |
++| distance | 0.18 |
++| activity | 0.12 |
++| interests | 0.12 |
++| profile quality | 0.10 |
++| novelty | 0.08 |
++| implicit preference | 0.05 |
++| exploration | 0.05 |
++
++When `recentlyActiveFirst=true`, activity receives more weight. During cold start (fewer than 20 behavior signals), implicit preference is disabled and weight is redistributed to declared preferences, activity and profile quality.
++
++### Cold-start weights
++
++Before enough behavioral history exists, ranking follows the declared-preference baseline discussed for the product: 35% preference compatibility, 20% distance, 15% activity, 10% common interests, 10% profile quality, 5% novelty and 5% exploration. Implicit preference stays at zero until the cold-start threshold is reached.
++
++## Implicit preference signals
++
++Behavior never changes the user's explicit settings. It only provides a soft ranking affinity.
++
++| Signal | Weight |
++|---|---:|
++| VIEW | +0.05 |
++| LIKE | +1.00 |
++| SUPER_LIKE | +2.00 |
++| MATCH | +3.00 |
++| MESSAGE | +4.00 |
++| CONVERSATION (3+ messages) | +6.00 |
++| PASS | -0.50 |
++| UNMATCH | -3.00 |
++| BLOCK | -8.00 |
++| REPORT | -10.00 |
++
++The model currently learns body-type and interest affinity. This is deliberately explainable and deterministic; a future ML ranker can consume the same feature contract.
++
++## Cooldowns
++
++`seen` is not permanent exclusion anymore.
++
++| Event | Default suppression |
++|---|---:|
++| VIEW | 24 hours |
++| PASS | 14 days |
++| LIKE | 30 days or until match |
++| SUPER_LIKE | 30 days or until match |
++| ACTIVE MATCH | permanent while active |
++| UNMATCH | 90 days |
++| BLOCK | permanent until unblock |
++| REPORT | permanent in both directions |
++
++All durations are configuration properties.
++
++## PostgreSQL/PostGIS
++
++Migration `V3__discovery_engine_v2.sql` enables PostGIS, adds `profiles.last_active_at`, a GIST expression index over profile coordinates, an activity discovery index and an interaction history index.
++
++Candidate retrieval uses `ST_DWithin` in the database instead of loading the whole population into Java and calculating radius eligibility there. If a non-strict local pool is sparse, retrieval expands up to the configured maximum radius before ranking. Exact coordinates remain private and are never added to the public recommendation projection.
++
++Local Docker builds `docker/postgres/Dockerfile` from `postgres:17-bookworm` and installs the PostgreSQL 17 PostGIS packages, keeping the database image under project control for local development.
++
++## Redis
++
++`CandidatePoolCache` stores only candidate IDs, not profile payloads. Profile rows are reloaded so rapidly changing visibility/activity fields are not frozen for the entire cache TTL. Redis errors fail open to PostgreSQL retrieval.
++
++## APIs
++
++Legacy:
++
++`GET /api/v1/discovery?limit=20`
++
++V2 cursor page:
++
++`GET /api/v1/discovery/page?limit=20&cursor=<opaque>`
++
++Response:
++
++```json
++{
++  "items": [],
++  "nextCursor": "opaque-or-null",
++  "poolSize": 642,
++  "eligibleCount": 211
++}
++```
++
++View/impression signal:
++
++`POST /api/v1/discovery/{candidateId}/view`
++
++Explainability (disabled by default; local Docker enables `HIMEROS_DISCOVERY_EXPLAIN_ENABLED=true`):
++
++`GET /api/v1/discovery/explain/{candidateId}`
++
++Example:
++
++```json
++{
++  "candidateId": "...",
++  "eligible": true,
++  "excludedBy": "ELIGIBLE",
++  "score": 87.34,
++  "distanceKm": 12.4,
++  "features": {
++    "preference": 1.0,
++    "distance": 0.82,
++    "activity": 1.0,
++    "interests": 0.61,
++    "profileQuality": 0.90,
++    "novelty": 0.75,
++    "implicitPreference": 0.67,
++    "exploration": 0.42
++  },
++  "weights": {},
++  "commonInterests": ["academia", "viagens"],
++  "cooldownUntil": null,
++  "coldStart": false
++}
++```
++
++Excluded candidates return `eligible=false`, `excludedBy` such as `STRICT_AGE`, `STRICT_DISTANCE`, `INTERACTION_COOLDOWN`, `ACTIVE_MATCH`, `UNMATCH_COOLDOWN`, `BLOCKED_OR_REPORTED`, and a `cooldownUntil` when relevant.
++
++## Metrics
++
++Low-cardinality Micrometer metrics:
++
++- `himeros.discovery.request` timer;
++- `himeros.discovery.pool.size` summary;
++- `himeros.discovery.result.size` summary;
++- `himeros.discovery.excluded{reason=...}` counter;
++- `himeros.discovery.cache{result=hit|miss|error}` counter.
++
++Do not tag metrics with user or candidate IDs.
++
++## Tuning environment variables
++
++- `HIMEROS_DISCOVERY_POOL_SIZE`
++- `HIMEROS_DISCOVERY_POOL_MULTIPLIER`
++- `HIMEROS_DISCOVERY_NON_STRICT_RADIUS_KM`
++- `HIMEROS_DISCOVERY_MAX_RETRIEVAL_RADIUS_KM`
++- `HIMEROS_DISCOVERY_CACHE_TTL`
++- `HIMEROS_DISCOVERY_VIEW_COOLDOWN`
++- `HIMEROS_DISCOVERY_PASS_COOLDOWN`
++- `HIMEROS_DISCOVERY_LIKE_COOLDOWN`
++- `HIMEROS_DISCOVERY_SUPER_LIKE_COOLDOWN`
++- `HIMEROS_DISCOVERY_UNMATCH_COOLDOWN`
++- `HIMEROS_DISCOVERY_COLD_START_INTERACTIONS`
++- `HIMEROS_DISCOVERY_IMPLICIT_HISTORY_LIMIT`
++- `HIMEROS_DISCOVERY_NEW_PROFILE_DAYS`
++- `HIMEROS_DISCOVERY_NEW_PROFILE_SHARE`
++- `HIMEROS_DISCOVERY_EXPLORATION_SHARE`
++- `HIMEROS_DISCOVERY_DIVERSIFICATION_PENALTY`
