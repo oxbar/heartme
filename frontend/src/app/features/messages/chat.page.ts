@@ -9,6 +9,7 @@ import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { ChatRealtime } from '../../core/realtime/chat-realtime';
 import { SessionStore } from '../../core/auth/session.store';
+import { SocialStateStore } from '../../core/state/social-state.store';
 import { MessageBubbleComponent } from '../../shared/message-bubble.component';
 import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
@@ -157,6 +158,7 @@ export class ChatPage implements OnDestroy {
   private readonly mediaApi = inject(MediaApi);
   private readonly realtime = inject(ChatRealtime);
   private readonly session = inject(SessionStore);
+  private readonly social = inject(SocialStateStore);
   private readonly router = inject(Router);
 
   @ViewChild('scrollRef') scrollRef?: ElementRef<HTMLDivElement>;
@@ -347,6 +349,7 @@ export class ChatPage implements OnDestroy {
       this.unmatching.set(true);
       try {
         await firstValueFrom(this.matchApi.unmatch(conversation.matchId));
+        this.social.removeMatch(conversation.matchId);
         await this.router.navigate(['/app/matches']);
       } catch {
         this.error.set('Não foi possível desfazer o match. Tente novamente.');

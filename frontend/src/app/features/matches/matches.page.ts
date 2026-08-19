@@ -1,12 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView, MatchView, PhotoView, PublicProfileView } from '../../core/api/contracts';
-import { MatchApi } from '../../core/api/match.api';
+import type { MatchView, PhotoView, PublicProfileView } from '../../core/api/contracts';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
-import { MessagingApi } from '../../core/api/messaging.api';
 import { SessionStore } from '../../core/auth/session.store';
+import { SocialStateStore } from '../../core/state/social-state.store';
 import { IconComponent } from '../../ui/icon/icon.component';
 
 @Component({
@@ -68,15 +67,14 @@ import { IconComponent } from '../../ui/icon/icon.component';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MatchesPage implements OnInit {
-  private readonly matchApi = inject(MatchApi);
+  private readonly social = inject(SocialStateStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
-  private readonly messagingApi = inject(MessagingApi);
   private readonly session = inject(SessionStore);
 
   readonly loading = signal(true);
   readonly error = signal('');
-  readonly matches = signal<MatchView[]>([]);
+  readonly matches = this.social.matches;
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly conversationByMatch = signal<Record<string, string>>({});
@@ -110,13 +108,12 @@ export class MatchesPage implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      const [list, conversations]: [MatchView[], ConversationView[]] = await Promise.all([
-        firstValueFrom(this.matchApi.list()),
-        firstValueFrom(this.messagingApi.conversations()).catch(() => [] as ConversationView[])
-      ]);
-      this.matches.set(list);
+      // Route changes must not create a new independent match state. Refresh the
+      // session store and render its last known-good value immediately.
+      await this.social.refresh({ preserveKnown: true });
+      const list = this.matches();
       const conversationMap: Record<string, string> = {};
-      for (const conversation of conversations) conversationMap[conversation.matchId] = conversation.id;
+      for (const conversation of this.social.conversations()) conversationMap[conversation.matchId] = conversation.id;
       this.conversationByMatch.set(conversationMap);
       const ids = Array.from(new Set(list.map(match => this.otherUser(match)).filter(Boolean)));
 

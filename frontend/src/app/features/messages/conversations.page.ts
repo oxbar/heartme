@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@ang
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import type { ConversationView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
-import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { SessionStore } from '../../core/auth/session.store';
+import { SocialStateStore } from '../../core/state/social-state.store';
 import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 
@@ -82,14 +82,14 @@ import { IconComponent } from '../../ui/icon/icon.component';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ConversationsPage implements OnInit {
-  private readonly messagingApi = inject(MessagingApi);
+  private readonly social = inject(SocialStateStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
 
   readonly loading = signal(true);
   readonly error = signal('');
-  readonly conversations = signal<ConversationView[]>([]);
+  readonly conversations = this.social.conversations;
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
@@ -118,14 +118,9 @@ export class ConversationsPage implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      const list = await firstValueFrom(this.messagingApi.conversations());
-      const sorted = [...list].sort((a, b) => {
-        const left = new Date(a.lastMessageAt || a.createdAt).getTime();
-        const right = new Date(b.lastMessageAt || b.createdAt).getTime();
-        return right - left;
-      });
-      this.conversations.set(sorted);
-      const ids = Array.from(new Set(sorted.map(item => this.otherUser(item)).filter(Boolean)));
+      await this.social.refresh({ preserveKnown: true });
+      const list = this.conversations();
+      const ids = Array.from(new Set(list.map(item => this.otherUser(item)).filter(Boolean)));
 
       const pairs = await Promise.all(ids.map(async id => {
         try {

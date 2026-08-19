@@ -4,12 +4,11 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/ro
 import { filter, firstValueFrom } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { ConversationView, MatchView, PhotoView, PresenceView, PublicProfileView } from '../core/api/contracts';
-import { MatchApi } from '../core/api/match.api';
-import { MessagingApi } from '../core/api/messaging.api';
 import { ProfileApi } from '../core/api/profile.api';
 import { MediaApi } from '../core/api/media.api';
 import { SessionStore } from '../core/auth/session.store';
 import { ProfileStore } from '../core/state/profile.store';
+import { SocialStateStore } from '../core/state/social-state.store';
 import { AvatarComponent } from '../shared/avatar.component';
 import { IconComponent } from '../ui/icon/icon.component';
 
@@ -184,8 +183,7 @@ import { IconComponent } from '../ui/icon/icon.component';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AppSidebarComponent {
-  private readonly matchApi = inject(MatchApi);
-  private readonly messagingApi = inject(MessagingApi);
+  private readonly social = inject(SocialStateStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
@@ -196,15 +194,15 @@ export class AppSidebarComponent {
   readonly logout = output<void>();
 
   readonly activeUrl = signal(this.router.url);
-  readonly socialLoading = signal(true);
-  readonly matches = signal<MatchView[]>([]);
-  readonly conversations = signal<ConversationView[]>([]);
+  readonly socialLoading = this.social.loading;
+  readonly matches = this.social.matches;
+  readonly conversations = this.social.conversations;
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
   readonly ownPhoto = signal<string | null>(null);
   private presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
-  private socialLoadInFlight: Promise<void> | null = null;
+  private enrichmentLoadInFlight: Promise<void> | null = null;
 
   readonly profileMode = computed(() => {
     const path = this.activeUrl().split(/[?#]/)[0];
@@ -269,85 +267,63 @@ export class AppSidebarComponent {
   }
 
   private load(): Promise<void> {
-    // Navigation between Matches and Messages can emit several NavigationEnd events
-    // while the same HTTP refresh is still in flight. Reuse that refresh instead of
-    // racing requests that could replace valid social state with a transient failure.
-    if (this.socialLoadInFlight) return this.socialLoadInFlight;
-    this.socialLoadInFlight = this.performLoad().finally(() => {
-      this.socialLoadInFlight = null;
+    if (this.enrichmentLoadInFlight) return this.enrichmentLoadInFlight;
+    this.enrichmentLoadInFlight = this.performLoad().finally(() => {
+      this.enrichmentLoadInFlight = null;
     });
-    return this.socialLoadInFlight;
+    return this.enrichmentLoadInFlight;
   }
 
   private async performLoad(): Promise<void> {
-    this.socialLoading.set(true);
-    try {
-      const [, ownPhotosResult, matchesResult, conversationsResult] = await Promise.all([
-        this.profileStore.load().catch(() => null),
-        Promise.resolve(firstValueFrom(this.mediaApi.mine())).then(
-          value => ({ ok: true as const, value }),
-          () => ({ ok: false as const })
-        ),
-        Promise.resolve(firstValueFrom(this.matchApi.list())).then(
-          value => ({ ok: true as const, value }),
-          () => ({ ok: false as const })
-        ),
-        Promise.resolve(firstValueFrom(this.messagingApi.conversations())).then(
-          value => ({ ok: true as const, value }),
-          () => ({ ok: false as const })
-        )
+    const [, ownPhotosResult] = await Promise.all([
+      this.profileStore.load().catch(() => null),
+      Promise.resolve(firstValueFrom(this.mediaApi.mine())).then(
+        value => ({ ok: true as const, value }),
+        () => ({ ok: false as const })
+      ),
+      // Matches/conversations are session state. Refresh them without ever
+      // replacing a valid list with a transient empty response during tab changes.
+      this.social.refresh({ preserveKnown: true })
+    ]);
+
+    if (ownPhotosResult.ok) {
+      this.ownPhoto.set([...ownPhotosResult.value].sort((a, b) => a.position - b.position)[0]?.url ?? null);
+    }
+
+    const matches = this.matches();
+    const conversations = this.conversations();
+    const userIds = Array.from(new Set([
+      ...matches.map(match => this.otherUser(match)),
+      ...conversations.map(conversation => this.otherUser(conversation))
+    ].filter(Boolean)));
+
+    const profilePairs = await Promise.all(userIds.map(async userId => {
+      try {
+        return [userId, await firstValueFrom(this.profileApi.byUser(userId))] as const;
+      } catch {
+        return null;
+      }
+    }));
+
+    const profileMap: Record<string, PublicProfileView> = { ...this.profiles() };
+    for (const pair of profilePairs) {
+      if (pair) profileMap[pair[0]] = pair[1];
+    }
+    this.profiles.set(profileMap);
+
+    if (userIds.length) {
+      const [photos, presencePairs] = await Promise.all([
+        firstValueFrom(this.mediaApi.batch(userIds)).catch(() => ({})),
+        Promise.all(userIds.map(async userId => {
+          try { return [userId, await firstValueFrom(this.profileApi.presence(userId))] as const; }
+          catch { return null; }
+        }))
       ]);
-
-      if (ownPhotosResult.ok) {
-        this.ownPhoto.set([...ownPhotosResult.value].sort((a, b) => a.position - b.position)[0]?.url ?? null);
-      }
-      if (matchesResult.ok) this.matches.set(matchesResult.value);
-      if (conversationsResult.ok) {
-        this.conversations.set([...conversationsResult.value].sort((a, b) => {
-          const left = new Date(a.lastMessageAt || a.createdAt).getTime();
-          const right = new Date(b.lastMessageAt || b.createdAt).getTime();
-          return right - left;
-        }));
-      }
-
-      // Enrich the last known-good social state. A failed refresh must never make
-      // already loaded matches disappear just because the user changed tabs.
-      const matches = this.matches();
-      const conversations = this.conversations();
-      const userIds = Array.from(new Set([
-        ...matches.map(match => this.otherUser(match)),
-        ...conversations.map(conversation => this.otherUser(conversation))
-      ].filter(Boolean)));
-
-      const profilePairs = await Promise.all(userIds.map(async userId => {
-        try {
-          return [userId, await firstValueFrom(this.profileApi.byUser(userId))] as const;
-        } catch {
-          return null;
-        }
-      }));
-
-      const profileMap: Record<string, PublicProfileView> = {};
-      for (const pair of profilePairs) {
-        if (pair) profileMap[pair[0]] = pair[1];
-      }
-      this.profiles.set(profileMap);
-
-      if (userIds.length) {
-        const [photos, presencePairs] = await Promise.all([
-          firstValueFrom(this.mediaApi.batch(userIds)).catch(() => ({})),
-          Promise.all(userIds.map(async userId => {
-            try { return [userId, await firstValueFrom(this.profileApi.presence(userId))] as const; }
-            catch { return null; }
-          }))
-        ]);
-        this.photos.set(photos);
-        const presenceMap: Record<string, PresenceView> = {};
-        for (const pair of presencePairs) if (pair) presenceMap[pair[0]] = pair[1];
-        this.presences.set(presenceMap);
-      }
-    } finally {
-      this.socialLoading.set(false);
+      this.photos.update(current => ({ ...current, ...photos }));
+      const presenceMap: Record<string, PresenceView> = { ...this.presences() };
+      for (const pair of presencePairs) if (pair) presenceMap[pair[0]] = pair[1];
+      this.presences.set(presenceMap);
     }
   }
+
 }

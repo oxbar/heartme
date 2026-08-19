@@ -6,6 +6,7 @@ import { DiscoveryApi } from '../../core/api/discovery.api';
 import { MediaApi } from '../../core/api/media.api';
 import { MatchApi } from '../../core/api/match.api';
 import { MessagingApi } from '../../core/api/messaging.api';
+import { SocialStateStore } from '../../core/state/social-state.store';
 import { ProfileCardComponent } from '../../shared/profile-card.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 
@@ -131,6 +132,7 @@ export class DiscoverPage implements OnInit {
   private readonly mediaApi = inject(MediaApi);
   private readonly matchApi = inject(MatchApi);
   private readonly messagingApi = inject(MessagingApi);
+  private readonly social = inject(SocialStateStore);
   private readonly router = inject(Router);
 
   @ViewChild(ProfileCardComponent) profileCard?: ProfileCardComponent;
@@ -260,6 +262,10 @@ export class DiscoverPage implements OnInit {
       this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
 
       if (matched) {
+        // Seed the shared social state before the user navigates away from Discovery.
+        // Matches/Messages can then render the same match without depending on a
+        // second route-local request winning a race with the backend commit.
+        await this.social.refresh({ preserveKnown: true });
         this.matchCelebration.set({
           userId,
           displayName: candidate?.displayName || 'essa pessoa'
