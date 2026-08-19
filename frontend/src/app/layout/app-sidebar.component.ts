@@ -102,11 +102,38 @@ import { IconComponent } from '../ui/icon/icon.component';
               }
             </div>
           } @else if (messagesMode()) {
+            <div class="hm-sidebar-match-strip" aria-label="Seus matches">
+              <div class="hm-sidebar-match-strip-title">
+                <strong>Seus matches</strong>
+                <a routerLink="/app/matches">Ver todos</a>
+              </div>
+              <div class="hm-sidebar-match-strip-list">
+                <a routerLink="/app/premium" class="hm-sidebar-match-mini is-likes" aria-label="Ver curtidas recebidas">
+                  <span class="hm-sidebar-match-mini-avatar"><hm-icon name="heart" size="21" /></span>
+                  <span>Curtidas</span>
+                </a>
+                @for (match of matches().slice(0, 12); track match.id) {
+                  @let otherId = otherUser(match);
+                  <a [routerLink]="matchRoute(match)" class="hm-sidebar-match-mini" [attr.aria-label]="'Abrir match com ' + (profileFor(otherId)?.displayName || 'Match')">
+                    <span class="hm-sidebar-match-mini-avatar">
+                      @if (photoFor(otherId)) {
+                        <img [src]="photoFor(otherId)!" [alt]="profileFor(otherId)?.displayName || 'Match'" loading="lazy" />
+                      } @else {
+                        <span class="hm-sidebar-match-mini-fallback">{{ initials(profileFor(otherId)?.displayName || 'H') }}</span>
+                      }
+                      @if (presenceFor(otherId)?.online) { <span class="hm-sidebar-match-mini-dot" aria-label="Online"></span> }
+                    </span>
+                    <span>{{ profileFor(otherId)?.displayName || 'Match' }}</span>
+                  </a>
+                }
+              </div>
+            </div>
+
             @if (!conversations().length) {
               <div class="hm-sidebar-empty">
                 <hm-icon name="message-circle" size="28" />
                 <strong>Nenhuma conversa ainda</strong>
-                <span>Seus novos matches aparecerão aqui.</span>
+                <span>Seus matches continuam acima e aparecerão aqui quando houver conversa.</span>
               </div>
             } @else {
               <div class="hm-conversation-list">
@@ -177,6 +204,7 @@ export class AppSidebarComponent {
   readonly presences = signal<Record<string, PresenceView>>({});
   readonly ownPhoto = signal<string | null>(null);
   private presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
+  private socialLoadInFlight: Promise<void> | null = null;
 
   readonly profileMode = computed(() => {
     const path = this.activeUrl().split(/[?#]/)[0];
@@ -240,24 +268,52 @@ export class AppSidebarComponent {
     return conversation ? ['/app/messages', conversation.id] : ['/app/profiles', this.otherUser(match)];
   }
 
-  private async load(): Promise<void> {
+  private load(): Promise<void> {
+    // Navigation between Matches and Messages can emit several NavigationEnd events
+    // while the same HTTP refresh is still in flight. Reuse that refresh instead of
+    // racing requests that could replace valid social state with a transient failure.
+    if (this.socialLoadInFlight) return this.socialLoadInFlight;
+    this.socialLoadInFlight = this.performLoad().finally(() => {
+      this.socialLoadInFlight = null;
+    });
+    return this.socialLoadInFlight;
+  }
+
+  private async performLoad(): Promise<void> {
     this.socialLoading.set(true);
     try {
-      const [, ownPhotos, matches, conversations] = await Promise.all([
+      const [, ownPhotosResult, matchesResult, conversationsResult] = await Promise.all([
         this.profileStore.load().catch(() => null),
-        firstValueFrom(this.mediaApi.mine()).catch(() => [] as PhotoView[]),
-        firstValueFrom(this.matchApi.list()).catch(() => [] as MatchView[]),
-        firstValueFrom(this.messagingApi.conversations()).catch(() => [] as ConversationView[])
+        Promise.resolve(firstValueFrom(this.mediaApi.mine())).then(
+          value => ({ ok: true as const, value }),
+          () => ({ ok: false as const })
+        ),
+        Promise.resolve(firstValueFrom(this.matchApi.list())).then(
+          value => ({ ok: true as const, value }),
+          () => ({ ok: false as const })
+        ),
+        Promise.resolve(firstValueFrom(this.messagingApi.conversations())).then(
+          value => ({ ok: true as const, value }),
+          () => ({ ok: false as const })
+        )
       ]);
 
-      this.ownPhoto.set([...ownPhotos].sort((a, b) => a.position - b.position)[0]?.url ?? null);
-      this.matches.set(matches);
-      this.conversations.set([...conversations].sort((a, b) => {
-        const left = new Date(a.lastMessageAt || a.createdAt).getTime();
-        const right = new Date(b.lastMessageAt || b.createdAt).getTime();
-        return right - left;
-      }));
+      if (ownPhotosResult.ok) {
+        this.ownPhoto.set([...ownPhotosResult.value].sort((a, b) => a.position - b.position)[0]?.url ?? null);
+      }
+      if (matchesResult.ok) this.matches.set(matchesResult.value);
+      if (conversationsResult.ok) {
+        this.conversations.set([...conversationsResult.value].sort((a, b) => {
+          const left = new Date(a.lastMessageAt || a.createdAt).getTime();
+          const right = new Date(b.lastMessageAt || b.createdAt).getTime();
+          return right - left;
+        }));
+      }
 
+      // Enrich the last known-good social state. A failed refresh must never make
+      // already loaded matches disappear just because the user changed tabs.
+      const matches = this.matches();
+      const conversations = this.conversations();
       const userIds = Array.from(new Set([
         ...matches.map(match => this.otherUser(match)),
         ...conversations.map(conversation => this.otherUser(conversation))

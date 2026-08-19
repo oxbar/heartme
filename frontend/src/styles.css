@@ -351,6 +351,114 @@
     color: white;
   }
 
+
+  .hm-sidebar-match-strip {
+    border-bottom: 1px solid hsl(var(--dating-border));
+    background: hsl(var(--dating-panel));
+    padding: 12px 12px 10px;
+  }
+
+  .hm-sidebar-match-strip-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    padding: 0 2px;
+  }
+
+  .hm-sidebar-match-strip-title strong {
+    color: hsl(var(--dating-text));
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .hm-sidebar-match-strip-title a {
+    color: hsl(var(--primary));
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .hm-sidebar-match-strip-list {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 1px 2px 5px;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--dating-border)) transparent;
+  }
+
+  .hm-sidebar-match-mini {
+    display: flex;
+    width: 64px;
+    flex: 0 0 64px;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: hsl(var(--dating-text));
+    text-decoration: none;
+  }
+
+  .hm-sidebar-match-mini > span:last-child {
+    width: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 800;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hm-sidebar-match-mini-avatar {
+    position: relative;
+    display: grid;
+    width: 54px;
+    height: 54px;
+    overflow: visible;
+    place-items: center;
+    border: 2px solid hsl(0 0% 100% / 0.12);
+    border-radius: 999px;
+    background: hsl(var(--dating-panel-raised));
+  }
+
+  .hm-sidebar-match-mini-avatar img,
+  .hm-sidebar-match-mini-fallback {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .hm-sidebar-match-mini-avatar img {
+    object-fit: cover;
+  }
+
+  .hm-sidebar-match-mini-fallback {
+    display: grid;
+    place-items: center;
+    background: linear-gradient(145deg, hsl(var(--primary) / 0.7), hsl(226 30% 15%));
+    color: white;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  .hm-sidebar-match-mini.is-likes .hm-sidebar-match-mini-avatar {
+    border-color: hsl(var(--primary) / 0.65);
+    background: hsl(var(--primary) / 0.18);
+    color: hsl(var(--primary));
+  }
+
+  .hm-sidebar-match-mini-dot {
+    position: absolute;
+    right: -1px;
+    bottom: 2px;
+    width: 10px;
+    height: 10px;
+    border: 2px solid hsl(var(--dating-panel));
+    border-radius: 999px;
+    background: hsl(142 72% 48%);
+  }
+
   .hm-conversation-list {
     padding: 0;
   }
