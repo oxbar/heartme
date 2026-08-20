@@ -3325,11 +3325,11 @@
   }
 
   .hm-message-bubble.is-mine {
-    border-color: hsl(var(--primary) / 0.55);
+    border-color: hsl(var(--primary) / 0.36);
     border-radius: 18px 18px 6px 18px;
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-    box-shadow: 0 8px 20px hsl(var(--primary) / 0.22);
+    background: hsl(var(--primary) / 0.14);
+    color: hsl(0 0% 98%);
+    box-shadow: 0 4px 14px hsl(0 0% 0% / 0.18);
   }
 
   .hm-message-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
@@ -3345,11 +3345,11 @@
   }
 
   .hm-message-bubble.is-mine .hm-message-meta {
-    color: hsl(var(--primary-foreground) / 0.64);
+    color: hsl(0 0% 100% / 0.58);
   }
 
   .hm-message-receipt { display: inline-flex; color: hsl(0 0% 100% / .62); }
-  .hm-message-receipt.is-read { color: hsl(188 88% 73%); }
+  .hm-message-receipt.is-read { color: hsl(var(--primary) / 0.88); }
 
   .hm-message-reaction-bar { display: flex; justify-content: flex-start; min-height: 24px; padding: 3px 4px 0; }
   .hm-message-reaction-bar.is-mine { justify-content: flex-end; }
