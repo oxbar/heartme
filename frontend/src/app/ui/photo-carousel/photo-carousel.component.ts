@@ -78,6 +78,7 @@ export class PhotoCarouselComponent {
   readonly photos = input<PhotoView[]>([]);
   readonly fallbackName = input('Himeros');
   readonly ariaLabel = input('Fotos do perfil');
+  readonly dragEnabled = input(true);
 
   readonly indexChange = output<number>();
 
@@ -146,7 +147,7 @@ export class PhotoCarouselComponent {
   }
 
   onPointerDown(event: PointerEvent): void {
-    if (this.orderedPhotos().length <= 1) return;
+    if (!this.dragEnabled() || this.orderedPhotos().length <= 1) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('button')) return;
     this.pointerId = event.pointerId;

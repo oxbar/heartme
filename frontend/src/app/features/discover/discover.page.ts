@@ -96,9 +96,9 @@ import { IconComponent } from '../../ui/icon/icon.component';
           @for (_ of [0,1,2,3,4,5,6,7,8,9,10,11]; track _) { <span [style.--i]="_"></span> }
         </div>
         <div class="hm-match-celebration-card">
-          <p class="hm-match-kicker">CONEXÃO RECÍPROCA</p>
-          <h2 id="match-title">It's a Match!</h2>
-          <p class="hm-match-celebration-copy">Você e {{ match.displayName }} curtiram um ao outro.</p>
+          <p class="hm-match-kicker">VOCÊS SE CURTIRAM</p>
+          <h2 id="match-title">Deu Match!</h2>
+          <p class="hm-match-celebration-copy">Você e {{ match.displayName }} têm uma nova conexão.</p>
 
           <div class="hm-match-faces" aria-label="Fotos do novo match">
             <div class="hm-match-face is-me">
@@ -166,11 +166,13 @@ export class DiscoverPage implements OnInit {
     switch (event.key) {
       case 'ArrowLeft':
         event.preventDefault();
-        void this.onInteract(current.profile.userId, 'PASS');
+        if (this.profileCard) this.profileCard.swipePass();
+        else void this.onInteract(current.profile.userId, 'PASS');
         break;
       case 'ArrowRight':
         event.preventDefault();
-        void this.onInteract(current.profile.userId, 'LIKE');
+        if (this.profileCard) this.profileCard.swipeLike();
+        else void this.onInteract(current.profile.userId, 'LIKE');
         break;
       case 'ArrowUp':
         event.preventDefault();
@@ -248,20 +250,31 @@ export class DiscoverPage implements OnInit {
 
   async onInteract(userId: string, type: InteractionType): Promise<void> {
     if (this.actionPending()) return;
+    const interactionStartedAt = performance.now();
     this.actionPending.set(true);
     this.error.set('');
     const candidate = this.recommendations().find(item => item.profile.userId === userId)?.profile ?? null;
 
     try {
       const result = await firstValueFrom(this.api.interact(userId, type));
+
+      // Keep the card mounted long enough for the horizontal exit to be visible,
+      // even when localhost responds in only a few milliseconds.
+      if (type === 'LIKE' || type === 'PASS') {
+        const remaining = Math.max(0, 260 - (performance.now() - interactionStartedAt));
+        if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+      }
+
+      // Advance the deck as soon as the decision animation completes. Match
+      // reconciliation may take a little longer and should not freeze the card stack.
+      this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
+
       let matched = false;
       if (type === 'LIKE' || type === 'SUPER_LIKE') {
         const activeMatch = await this.waitForActiveMatch(userId);
         matched = result.mutualLike || !!activeMatch;
         if (activeMatch) this.social.rememberMatch(activeMatch);
       }
-
-      this.recommendations.update(list => list.filter(item => item.profile.userId !== userId));
 
       if (matched) {
         // Seed the shared social state before the user navigates away from Discovery.
@@ -278,6 +291,7 @@ export class DiscoverPage implements OnInit {
         await this.loadMore();
       }
     } catch {
+      this.profileCard?.resetSwipe();
       this.error.set('Não foi possível registrar essa ação. Tente novamente.');
     } finally {
       this.actionPending.set(false);
