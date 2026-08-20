@@ -373,7 +373,7 @@ const INTEREST_GROUPS = [
                   </div>
                 }
 
-                @if (sortedPhotos().length < 9) {
+                @if (sortedPhotos().length < 6) {
                   <label class="hm-photo-cell hm-photo-add" [class.opacity-50]="uploading()" for="photo-upload-input">
                     <hm-icon [name]="uploading() ? 'loader-2' : 'upload'" size="22" [class]="uploading() ? 'animate-spin' : ''" />
                     <span class="sr-only">Adicionar foto</span>

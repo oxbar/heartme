@@ -2,9 +2,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } 
 import { Router } from '@angular/router';
 import { form, FormField, minLength, required, submit } from '@angular/forms/signals';
 import { ProfileApi } from '../../core/api/profile.api';
+import { MediaApi } from '../../core/api/media.api';
 import { LocationApi } from '../../core/api/location.api';
 import { ProfileStore } from '../../core/state/profile.store';
-import type { BrazilianCityView, BrazilianStateView, Gender, ProfileRequest, BodyType } from '../../core/api/contracts';
+import type { BrazilianCityView, BrazilianStateView, Gender, ProfileRequest, BodyType, PhotoView } from '../../core/api/contracts';
 import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from '../../ui/icon/icon.component';
@@ -68,7 +69,7 @@ const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
         <div class="hm-ob-header">
           <p class="hm-auth-eyebrow">Seu perfil, sem burocracia</p>
           <h1>Vamos montar seu matching</h1>
-          <p>Três passos curtos para entendermos quem você é, quem procura e quais afinidades importam.</p>
+          <p>Quatro passos curtos para entendermos quem você é, quem procura, suas afinidades e como você quer aparecer.</p>
         </div>
 
         <nav class="hm-ob-progress" aria-label="Progresso do cadastro">
@@ -412,10 +413,83 @@ const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
                 </div>
 
                 <div class="hm-ob-ready-card">
-                  <span class="hm-ob-ready-icon"><hm-icon name="sparkles" /></span>
+                  <span class="hm-ob-ready-icon"><hm-icon name="upload" /></span>
                   <div>
-                    <strong>Seu Discovery será ativado ao concluir</strong>
-                    <span>Controles avançados como modo global, filtros rígidos e prioridade por atividade continuam disponíveis depois no perfil.</span>
+                    <strong>Falta só mostrar quem você é</strong>
+                    <span>No próximo passo você adiciona de 2 a 6 fotos. A primeira será a foto principal do seu perfil.</span>
+                  </div>
+                </div>
+              </section>
+            }
+
+            @if (currentStep() === 4) {
+              <section class="hm-ob-step-panel" aria-labelledby="ob-step-photos">
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading">
+                    <span class="hm-ob-section-number">04</span>
+                    <div>
+                      <h3 id="ob-step-photos">Mostre quem você é</h3>
+                      <p>Adicione entre 2 e 6 fotos nítidas e atuais. A primeira foto enviada será usada como principal.</p>
+                    </div>
+                  </div>
+
+                  <div class="hm-ob-photo-summary">
+                    <div>
+                      <strong>{{ photosReady() ? 'Fotos prontas para começar' : 'Adicione pelo menos 2 fotos' }}</strong>
+                      <span>JPEG, PNG ou WEBP · até 15 MB por imagem · máximo de 6 fotos.</span>
+                    </div>
+                    <span class="hm-ob-counter" [class.is-ready]="photosReady()">{{ photos().length }}/6</span>
+                  </div>
+
+                  <div class="hm-ob-photo-grid">
+                    @for (photo of sortedPhotos(); track photo.id; let i = $index) {
+                      <article class="hm-ob-photo-card" [class.is-primary]="i === 0">
+                        <img [src]="photo.url" alt="Foto do perfil {{ i + 1 }}" loading="lazy" />
+                        <span class="hm-ob-photo-position">{{ i === 0 ? 'Principal' : (i + 1) }}</span>
+                        <button
+                          type="button"
+                          class="hm-ob-photo-remove"
+                          (click)="deletePhoto(photo.id)"
+                          [disabled]="uploading()"
+                          aria-label="Remover foto {{ i + 1 }}"
+                        >
+                          <hm-icon name="x" size="16" />
+                        </button>
+                      </article>
+                    }
+
+                    @if (photos().length < 6) {
+                      <label class="hm-ob-photo-add" for="ob-photo-upload" [class.is-uploading]="uploading()">
+                        <span class="hm-ob-photo-add-icon">
+                          <hm-icon [name]="uploading() ? 'loader-2' : 'upload'" [class]="uploading() ? 'animate-spin' : ''" />
+                        </span>
+                        <strong>{{ uploading() ? 'Enviando…' : 'Adicionar fotos' }}</strong>
+                        <span>{{ photos().length === 0 ? 'Escolha de 2 a 6 imagens' : 'Você ainda pode adicionar ' + (6 - photos().length) }}</span>
+                        <input
+                          id="ob-photo-upload"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          class="sr-only"
+                          (change)="onPhotoUpload($event)"
+                          [disabled]="uploading()"
+                        />
+                      </label>
+                    }
+                  </div>
+
+                  <div class="hm-ob-photo-tips">
+                    <div><hm-icon name="sparkles" size="16" /><span><strong>Boa luz</strong> e rosto visível na foto principal.</span></div>
+                    <div><hm-icon name="users" size="16" /><span>Evite começar com foto em grupo: queremos reconhecer você rapidamente.</span></div>
+                    <div><hm-icon name="shield-check" size="16" /><span>Não publique documentos, endereço ou outras informações sensíveis.</span></div>
+                  </div>
+                </div>
+
+                <div class="hm-ob-ready-card" [class.is-pending]="!photosReady()">
+                  <span class="hm-ob-ready-icon"><hm-icon [name]="photosReady() ? 'check' : 'upload'" /></span>
+                  <div>
+                    <strong>{{ photosReady() ? 'Tudo pronto para o Discovery' : 'Precisamos de mais ' + (2 - photos().length) + (photos().length === 1 ? ' foto' : ' fotos') }}</strong>
+                    <span>{{ photosReady() ? 'Ao tocar em Começar, salvamos o perfil e ativamos sua descoberta.' : 'Duas fotos reduzem perfis vazios e dão contexto mínimo para uma decisão de like.' }}</span>
                   </div>
                 </div>
               </section>
@@ -437,12 +511,12 @@ const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
                   <hm-icon name="arrow-right" />
                 </button>
               } @else {
-                <button type="submit" class="hm-ob-submit" [disabled]="onboardingForm().submitting()">
+                <button type="submit" class="hm-ob-submit" [disabled]="onboardingForm().submitting() || uploading()">
                   @if (onboardingForm().submitting()) {
                     <hm-icon name="refresh-cw" class="animate-spin" />
                     Salvando...
                   } @else {
-                    Salvar e começar
+                    Começar
                     <hm-icon name="sparkles" />
                   }
                 </button>
@@ -457,6 +531,7 @@ const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
 })
 export class OnboardingPage implements OnInit {
   private readonly profileApi = inject(ProfileApi);
+  private readonly mediaApi = inject(MediaApi);
   private readonly locationApi = inject(LocationApi);
   private readonly profileStore = inject(ProfileStore);
   private readonly router = inject(Router);
@@ -467,12 +542,17 @@ export class OnboardingPage implements OnInit {
   protected readonly steps = [
     { id: 1, title: 'Sobre você', caption: 'Identidade e localização', description: 'Primeiro, precisamos do mínimo necessário para saber quem é você e de onde parte a descoberta.' },
     { id: 2, title: 'Quem você procura', caption: 'Preferências de descoberta', description: 'Agora definimos os sinais que mais influenciam quais pessoas entram e sobem no seu Discovery.' },
-    { id: 3, title: 'Afinidades', caption: 'Interesses e contexto', description: 'Por fim, adicionamos sinais de compatibilidade para ordenar melhor os perfis e melhorar a qualidade das conexões.' },
+    { id: 3, title: 'Afinidades', caption: 'Interesses e contexto', description: 'Adicionamos sinais de compatibilidade para ordenar melhor os perfis e melhorar a qualidade das conexões.' },
+    { id: 4, title: 'Mostre quem você é', caption: 'Fotos do perfil', description: 'Finalize com fotos nítidas. Elas são essenciais para confiança, contexto e qualidade das decisões no Discovery.' },
   ] as const;
 
   readonly currentStep = signal(1);
   readonly currentStepMeta = computed(() => this.steps[this.currentStep() - 1] ?? this.steps[0]);
   readonly geoStatus = signal<'idle' | 'loading' | 'ready' | 'denied' | 'unavailable'>('idle');
+  readonly uploading = signal(false);
+  readonly photos = signal<PhotoView[]>([]);
+  readonly sortedPhotos = computed(() => [...this.photos()].sort((a, b) => a.position - b.position));
+  readonly photosReady = computed(() => this.photos().length >= 2);
 
   readonly error = signal('');
   readonly states = signal<BrazilianStateView[]>([]);
@@ -481,7 +561,12 @@ export class OnboardingPage implements OnInit {
   private loadedCitiesFor = '';
 
   async ngOnInit(): Promise<void> {
-    this.states.set(await firstValueFrom(this.locationApi.states()).catch(() => [] as BrazilianStateView[]));
+    const [states, photos] = await Promise.all([
+      firstValueFrom(this.locationApi.states()).catch(() => [] as BrazilianStateView[]),
+      firstValueFrom(this.mediaApi.mine()).catch(() => [] as PhotoView[]),
+    ]);
+    this.states.set(states);
+    this.photos.set(photos);
   }
 
   readonly lookingForSet = signal<Set<Gender>>(new Set());
@@ -552,6 +637,11 @@ export class OnboardingPage implements OnInit {
 
     if (this.currentStep() === 2 && this.lookingForSet().size === 0) {
       this.error.set('Selecione pelo menos uma opção em “Tenho interesse em” para configurar seu Discovery.');
+      return;
+    }
+
+    if (this.currentStep() === 3 && this.interests().length < 3) {
+      this.error.set('Escolha pelo menos 3 interesses para dar sinais mínimos de afinidade ao motor de matching.');
       return;
     }
 
@@ -689,6 +779,61 @@ export class OnboardingPage implements OnInit {
     this.interests.set(this.interests().filter((i: string) => i !== tag));
   }
 
+  async onPhotoUpload(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (!files.length || this.uploading()) return;
+
+    const availableSlots = 6 - this.photos().length;
+    if (files.length > availableSlots) {
+      this.error.set(`Você pode adicionar no máximo 6 fotos. Selecione até ${availableSlots} ${availableSlots === 1 ? 'imagem' : 'imagens'} agora.`);
+      input.value = '';
+      return;
+    }
+
+    const acceptedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const invalid = files.find(file => !acceptedTypes.has(file.type) || file.size > 15 * 1024 * 1024);
+    if (invalid) {
+      this.error.set('Use somente JPEG, PNG ou WEBP com até 15 MB por imagem.');
+      input.value = '';
+      return;
+    }
+
+    this.uploading.set(true);
+    this.error.set('');
+    let uploaded = 0;
+    try {
+      for (const file of files) {
+        const photo = await firstValueFrom(this.mediaApi.upload(file));
+        this.photos.update(list => [...list, photo]);
+        uploaded++;
+      }
+    } catch {
+      this.error.set(uploaded > 0
+        ? 'Algumas fotos foram enviadas, mas uma delas falhou. Revise as imagens e tente novamente.'
+        : 'Não foi possível enviar as fotos. Use JPEG, PNG ou WEBP e tente novamente.');
+    } finally {
+      this.uploading.set(false);
+      input.value = '';
+    }
+  }
+
+  async deletePhoto(photoId: string): Promise<void> {
+    if (this.uploading()) return;
+    const confirmed = typeof globalThis.confirm === 'function'
+      ? globalThis.confirm('Remover esta foto do seu perfil?')
+      : true;
+    if (!confirmed) return;
+
+    this.error.set('');
+    try {
+      await firstValueFrom(this.mediaApi.delete(photoId));
+      this.photos.update(list => list.filter(photo => photo.id !== photoId));
+    } catch {
+      this.error.set('Não foi possível remover a foto. Tente novamente.');
+    }
+  }
+
   private normalize(value: string): string {
     return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
   }
@@ -725,6 +870,12 @@ export class OnboardingPage implements OnInit {
     event.preventDefault();
     this.commitDraft();
 
+    if (this.uploading()) {
+      this.currentStep.set(4);
+      this.error.set('Aguarde o envio das fotos terminar antes de começar.');
+      return;
+    }
+
     if (!this.isAdult(this.model().birthDate)) {
       this.currentStep.set(1);
       this.error.set('O Himeros é exclusivo para maiores de 18 anos. Confira sua data de nascimento.');
@@ -738,6 +889,11 @@ export class OnboardingPage implements OnInit {
     if (this.interests().length < 3) {
       this.currentStep.set(3);
       this.error.set('Escolha pelo menos 3 interesses para dar sinais mínimos de afinidade ao motor de matching.');
+      return;
+    }
+    if (!this.photosReady()) {
+      this.currentStep.set(4);
+      this.error.set('Adicione pelo menos 2 fotos para começar. Você pode enviar até 6.');
       return;
     }
     if (!this.locationSelectionValid()) {

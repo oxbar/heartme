@@ -3697,7 +3697,7 @@
 
   .hm-ob-progress {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
     margin: 0 0 18px;
   }
@@ -4119,6 +4119,148 @@
   .hm-ob-ready-card > div { display: grid; gap: 3px; }
   .hm-ob-ready-card strong { color: hsl(0 0% 100% / .88); font-size: 13px; }
   .hm-ob-ready-card span:not(.hm-ob-ready-icon) { color: hsl(0 0% 100% / .40); font-size: 11.5px; line-height: 1.5; }
+  .hm-ob-ready-card.is-pending { border-color: hsl(0 0% 100% / .08); background: hsl(0 0% 100% / .025); }
+  .hm-ob-ready-card.is-pending .hm-ob-ready-icon { background: hsl(0 0% 100% / .05); color: hsl(0 0% 100% / .46); }
+
+  .hm-ob-photo-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid hsl(var(--primary) / .14);
+    border-radius: 16px;
+    background: linear-gradient(135deg, hsl(var(--primary) / .07), hsl(0 0% 100% / .018));
+    padding: 13px 14px;
+  }
+  .hm-ob-photo-summary > div { display: grid; gap: 3px; }
+  .hm-ob-photo-summary strong { color: hsl(0 0% 100% / .88); font-size: 13px; }
+  .hm-ob-photo-summary span:not(.hm-ob-counter) { color: hsl(0 0% 100% / .40); font-size: 11.5px; line-height: 1.45; }
+
+  .hm-ob-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .hm-ob-photo-card,
+  .hm-ob-photo-add {
+    position: relative;
+    min-height: 220px;
+    aspect-ratio: .78;
+    overflow: hidden;
+    border-radius: 18px;
+  }
+
+  .hm-ob-photo-card {
+    border: 1px solid hsl(0 0% 100% / .09);
+    background: hsl(0 0% 100% / .03);
+    box-shadow: 0 12px 30px hsl(0 0% 0% / .20);
+  }
+  .hm-ob-photo-card.is-primary {
+    border-color: hsl(var(--primary) / .48);
+    box-shadow: 0 0 0 1px hsl(var(--primary) / .08) inset, 0 14px 34px hsl(0 0% 0% / .26);
+  }
+  .hm-ob-photo-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 55%, hsl(0 0% 0% / .74));
+    pointer-events: none;
+  }
+  .hm-ob-photo-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .hm-ob-photo-position {
+    position: absolute;
+    z-index: 2;
+    left: 10px;
+    bottom: 10px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    border: 1px solid hsl(var(--primary) / .32);
+    border-radius: 999px;
+    background: hsl(0 0% 4% / .78);
+    color: hsl(var(--primary));
+    padding: 0 9px;
+    font-size: 10.5px;
+    font-weight: 900;
+    backdrop-filter: blur(8px);
+  }
+
+  .hm-ob-photo-remove {
+    position: absolute;
+    z-index: 3;
+    top: 9px;
+    right: 9px;
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid hsl(0 0% 100% / .14);
+    border-radius: 999px;
+    background: hsl(0 0% 4% / .76);
+    color: hsl(0 0% 100% / .78);
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 100ms ease;
+  }
+  .hm-ob-photo-remove:hover { border-color: hsl(0 65% 55% / .44); background: hsl(0 65% 45% / .15); color: hsl(0 75% 72%); }
+  .hm-ob-photo-remove:active { transform: scale(.96); }
+  .hm-ob-photo-remove:disabled { cursor: wait; opacity: .5; }
+
+  .hm-ob-photo-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    border: 1.5px dashed hsl(var(--primary) / .34);
+    background:
+      radial-gradient(100% 90% at 50% 0%, hsl(var(--primary) / .08), transparent 70%),
+      hsl(0 0% 100% / .02);
+    color: hsl(0 0% 100% / .72);
+    padding: 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease, transform 100ms ease;
+  }
+  .hm-ob-photo-add:hover { border-color: hsl(var(--primary) / .66); background: hsl(var(--primary) / .07); }
+  .hm-ob-photo-add:active { transform: scale(.992); }
+  .hm-ob-photo-add.is-uploading { cursor: wait; opacity: .68; }
+  .hm-ob-photo-add-icon {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    border: 1px solid hsl(var(--primary) / .22);
+    border-radius: 15px;
+    background: hsl(var(--primary) / .10);
+    color: hsl(var(--primary));
+  }
+  .hm-ob-photo-add strong { color: hsl(0 0% 100% / .88); font-size: 13px; }
+  .hm-ob-photo-add > span:last-of-type { color: hsl(0 0% 100% / .36); font-size: 10.5px; line-height: 1.4; }
+
+  .hm-ob-photo-tips {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 4px;
+  }
+  .hm-ob-photo-tips > div {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    border: 1px solid hsl(0 0% 100% / .065);
+    border-radius: 13px;
+    background: hsl(0 0% 100% / .022);
+    padding: 10px 11px;
+    color: hsl(0 0% 100% / .38);
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+  .hm-ob-photo-tips hm-icon { flex: 0 0 auto; color: hsl(var(--primary) / .82); }
+  .hm-ob-photo-tips strong { color: hsl(0 0% 100% / .68); }
 
   .hm-ob-actions {
     display: grid;
@@ -4148,11 +4290,19 @@
   .hm-ob-submit { margin-top: 0; width: auto; }
   .hm-ob-actions .hm-ob-submit:disabled { opacity: .58; }
 
+  @media (max-width: 900px) {
+    .hm-ob-progress { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hm-ob-photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hm-ob-photo-tips { grid-template-columns: 1fr; }
+  }
+
   @media (max-width: 700px) {
-    .hm-ob-progress { grid-template-columns: 1fr; }
+    .hm-ob-progress { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .hm-ob-progress-item { min-height: 52px; }
     .hm-ob-progress-item:not(.is-active) .hm-ob-progress-copy small { display: none; }
     .hm-ob-card { padding: 20px 16px; border-radius: 20px; }
+    .hm-ob-photo-card, .hm-ob-photo-add { min-height: 180px; border-radius: 15px; }
+    .hm-ob-photo-summary { align-items: flex-start; }
     .hm-ob-geo-row { align-items: stretch; flex-direction: column; }
     .hm-ob-secondary-action { width: 100%; }
     .hm-ob-custom-interest { grid-template-columns: 1fr; }
