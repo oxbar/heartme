@@ -4,13 +4,30 @@ import { form, FormField, minLength, required, submit } from '@angular/forms/sig
 import { ProfileApi } from '../../core/api/profile.api';
 import { LocationApi } from '../../core/api/location.api';
 import { ProfileStore } from '../../core/state/profile.store';
-import type { BrazilianCityView, BrazilianStateView, Gender } from '../../core/api/contracts';
+import type { BrazilianCityView, BrazilianStateView, Gender, ProfileRequest, BodyType } from '../../core/api/contracts';
 import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from '../../ui/icon/icon.component';
 import { SliderComponent } from '../../ui/slider/slider.component';
 import { SwitchComponent } from '../../ui/switch/switch.component';
-import type { ProfileRequest, BodyType } from '../../core/api/contracts';
+
+interface OnboardingFormModel {
+  displayName: string;
+  birthDate: string;
+  gender: Gender | '';
+  city: string;
+  state: string;
+  bio: string;
+  interestsRaw: string;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+interface InterestGroup {
+  title: string;
+  items: readonly string[];
+}
 
 interface BodyTypeOption {
   value: BodyType;
@@ -35,44 +52,43 @@ const GENDER_INTEREST_OPTIONS: { value: Gender; label: string }[] = [
   { value: 'OTHER', label: 'Outros' }
 ];
 
-const ONBOARDING_INTEREST_GROUPS = [
+const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
   { title: 'Estilo de vida', items: ['Academia', 'Viagens', 'Trilhas', 'Praia', 'Gastronomia', 'Café', 'Pets', 'Natureza'] },
   { title: 'Cultura', items: ['Música', 'Cinema', 'Séries', 'Livros', 'Fotografia', 'Arte', 'Museus', 'Teatro'] },
   { title: 'Social', items: ['Amigos', 'Família', 'Festas', 'Bares', 'Shows', 'Festivais', 'Churrasco', 'Eventos'] },
   { title: 'Esportes & hobbies', items: ['Corrida', 'Ciclismo', 'Futebol', 'Dança', 'Games', 'Tecnologia', 'Culinária', 'Yoga'] }
-] as const;
+];
 
 
 @Component({
   imports: [FormField, CommonModule, IconComponent, SliderComponent, SwitchComponent],
   standalone: true,
   template: `
-    <div class="min-h-screen bg-background py-8 sm:py-12 px-4">
-      <div class="max-w-3xl mx-auto">
-        <div class="text-center mb-8">
-          <p class="text-sm font-bold text-primary uppercase tracking-wider mb-2">Passo 1 de 1</p>
-          <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground mb-3">Complete seu perfil</h1>
-          <p class="text-muted-foreground max-w-xl mx-auto">Essas informações nos ajudam a conectar você com as pessoas certas.</p>
+    <div class="hm-ob-shell">
+      <div class="hm-ob-inner">
+        <div class="hm-ob-header">
+          <p class="hm-auth-eyebrow">Passo 1 de 1</p>
+          <h1>Complete seu perfil</h1>
+          <p>Essas informações nos ajudam a conectar você com as pessoas certas.</p>
         </div>
 
-        <div class="rounded-3xl border border-border bg-card p-6 sm:p-10 shadow-sm">
+        <div class="hm-ob-card">
           @if (error()) {
-            <div role="alert" class="mb-8 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive px-4 py-3 text-sm">
-              <hm-icon name="alert-triangle" size="20" class="flex-none mt-0.5" />
+            <div role="alert" class="hm-auth-alert" style="margin-bottom: 28px;">
+              <span style="display:grid;place-items:center;flex:0 0 auto;width:20px;height:20px;">
+                <hm-icon name="alert-triangle" size="18" />
+              </span>
               <div>{{ error() }}</div>
             </div>
           }
 
-          <form (submit)="onSubmit($event)" novalidate class="space-y-8">
+          <form (submit)="onSubmit($event)" novalidate>
             <!-- DADOS BÁSICOS -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-              Dados básicos
-            </h2>
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Dados básicos</h2>
 
-            <div class="space-y-5">
-              <div>
-                <label for="ob-displayName" class="block text-sm font-semibold text-foreground mb-1.5">Nome exibido</label>
+              <div class="hm-field">
+                <label class="hm-field-label" for="ob-displayName">Nome exibido</label>
                 <input
                   id="ob-displayName" type="text"
                   class="hm-ob-input"
@@ -80,24 +96,24 @@ const ONBOARDING_INTEREST_GROUPS = [
                   placeholder="Como quer ser chamado(a)"
                 />
                 @if (onboardingForm.displayName().touched() && onboardingForm.displayName().invalid()) {
-                  <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.displayName().errors()[0]?.message }}</p>
+                  <p class="hm-field-error">{{ onboardingForm.displayName().errors()[0]?.message }}</p>
                 }
               </div>
 
-              <div class="grid sm:grid-cols-2 gap-5">
-                <div>
-                  <label for="ob-birthDate" class="block text-sm font-semibold text-foreground mb-1.5">Data de nascimento</label>
+              <div class="hm-ob-grid-2">
+                <div class="hm-field">
+                  <label class="hm-field-label" for="ob-birthDate">Data de nascimento</label>
                   <input
                     id="ob-birthDate" type="date"
                     class="hm-ob-input"
                     [formField]="onboardingForm.birthDate"
                   />
                   @if (onboardingForm.birthDate().touched() && onboardingForm.birthDate().invalid()) {
-                    <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.birthDate().errors()[0]?.message }}</p>
+                    <p class="hm-field-error">{{ onboardingForm.birthDate().errors()[0]?.message }}</p>
                   }
                 </div>
-                <div>
-                  <label for="ob-gender" class="block text-sm font-semibold text-foreground mb-1.5">Gênero</label>
+                <div class="hm-field">
+                  <label class="hm-field-label" for="ob-gender">Gênero</label>
                   <select
                     id="ob-gender"
                     class="hm-ob-input"
@@ -110,31 +126,28 @@ const ONBOARDING_INTEREST_GROUPS = [
                     <option value="OTHER">Outro</option>
                   </select>
                   @if (onboardingForm.gender().touched() && onboardingForm.gender().invalid()) {
-                    <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.gender().errors()[0]?.message }}</p>
+                    <p class="hm-field-error">{{ onboardingForm.gender().errors()[0]?.message }}</p>
                   }
                 </div>
               </div>
             </div>
-          </div>
 
             <!-- LOCALIZAÇÃO -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-                Localização
-              </h2>
-              <div class="rounded-2xl border border-border bg-accent/30 p-5">
-                <div class="flex items-start gap-3 mb-4">
-                  <span class="flex-none grid h-10 w-10 rounded-xl bg-primary/15 text-primary place-items-center shadow-inner">
-                    <hm-icon name="map-pin" size="18" />
-                  </span>
-                  <div class="min-w-0">
-                    <div class="text-sm font-extrabold text-foreground">Onde você mora</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">Usada para encontrar pessoas próximas</div>
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Localização</h2>
+
+              <div class="hm-ob-location-callout">
+                <div class="hm-ob-location-head">
+                  <span class="hm-ob-location-icon"><hm-icon name="map-pin" /></span>
+                  <div class="hm-ob-location-copy">
+                    <strong>Onde você mora</strong>
+                    <span>Usada para encontrar pessoas próximas</span>
                   </div>
                 </div>
-                <div class="grid sm:grid-cols-2 gap-4 mt-2">
-                  <div>
-                    <label for="ob-state" class="block text-xs font-semibold text-foreground/80 mb-1.5">Estado</label>
+
+                <div class="hm-ob-grid-2">
+                  <div class="hm-field">
+                    <label class="hm-field-label is-subtle" for="ob-state">Estado</label>
                     <input
                       id="ob-state" type="text"
                       class="hm-ob-input"
@@ -147,9 +160,9 @@ const ONBOARDING_INTEREST_GROUPS = [
                       @for (state of states(); track state.code) { <option [value]="state.name">{{ state.code }}</option> }
                     </datalist>
                   </div>
-                  <div>
-                    <label for="ob-city" class="block text-xs font-semibold text-foreground/80 mb-1.5">Cidade</label>
-                    <div class="relative">
+                  <div class="hm-field">
+                    <label class="hm-field-label is-subtle" for="ob-city">Cidade</label>
+                    <div class="hm-input-wrap has-icon-right">
                       <input
                         id="ob-city" type="text"
                         class="hm-ob-input"
@@ -158,13 +171,17 @@ const ONBOARDING_INTEREST_GROUPS = [
                         (input)="onCityInput($event)"
                         [placeholder]="cityLoading() ? 'Carregando cidades…' : 'Blumenau'"
                       />
-                      @if (cityLoading()) { <hm-icon name="loader-2" size="15" class="absolute right-3 top-3.5 animate-spin text-muted-foreground" /> }
+                      @if (cityLoading()) {
+                        <span class="hm-ob-loader" aria-hidden="true">
+                          <hm-icon name="loader-2" class="animate-spin" />
+                        </span>
+                      }
                     </div>
                     <datalist id="ob-city-options">
                       @for (city of cities(); track city.id) { <option [value]="city.name"></option> }
                     </datalist>
                     @if (onboardingForm.city().touched() && onboardingForm.city().invalid()) {
-                      <p class="mt-1.5 text-sm text-destructive">{{ onboardingForm.city().errors()[0]?.message }}</p>
+                      <p class="hm-field-error">{{ onboardingForm.city().errors()[0]?.message }}</p>
                     }
                   </div>
                 </div>
@@ -172,15 +189,13 @@ const ONBOARDING_INTEREST_GROUPS = [
             </div>
 
             <!-- SOBRE VOCÊ -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-                Sobre você
-              </h2>
-              <div>
-                <label for="ob-bio" class="block text-sm font-semibold text-foreground mb-1.5">Biografia</label>
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Sobre você</h2>
+              <div class="hm-field">
+                <label class="hm-field-label" for="ob-bio">Biografia</label>
                 <textarea
                   id="ob-bio" rows="4"
-                  class="hm-ob-input resize-y"
+                  class="hm-ob-input"
                   [formField]="onboardingForm.bio"
                   placeholder="Conte um pouco sobre você e o que procura..."
                 ></textarea>
@@ -188,12 +203,11 @@ const ONBOARDING_INTEREST_GROUPS = [
             </div>
 
             <!-- SEU TIPO DE CORPO -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-4 pb-2 border-b border-border">
-                Seu tipo de corpo
-              </h2>
-              <p class="text-sm text-muted-foreground mb-5">Como você se descreve? Ajuda a combinar com quem procura perfis como o seu.</p>
-              <div class="grid sm:grid-cols-2 gap-3">
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Seu tipo de corpo</h2>
+              <p class="hm-ob-section-lead">Como você se descreve? Ajuda a combinar com quem procura perfis como o seu.</p>
+
+              <div class="hm-ob-body-grid">
                 @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
                   <button
                     type="button"
@@ -202,35 +216,46 @@ const ONBOARDING_INTEREST_GROUPS = [
                     (click)="setBodyType(opt.value)"
                   >
                     <span class="hm-ob-body-icon" [class.is-selected]="bodyType() === opt.value">
-                      <hm-icon [name]="opt.icon" size="18" />
+                      <hm-icon [name]="opt.icon" />
                     </span>
-                    <div class="flex-1 min-w-0 text-left">
-                      <div class="text-sm font-extrabold text-foreground">{{ opt.label }}</div>
-                      <div class="text-xs text-muted-foreground mt-0.5">{{ opt.hint }}</div>
+                    <div class="hm-ob-body-copy">
+                      <strong>{{ opt.label }}</strong>
+                      <span>{{ opt.hint }}</span>
                     </div>
                     @if (bodyType() === opt.value) {
-                      <hm-icon name="check" size="16" class="flex-none text-primary" />
+                      <span class="hm-ob-body-check">
+                        <hm-icon name="check" />
+                      </span>
                     }
                   </button>
                 }
               </div>
-              <button type="button" class="mt-3 text-xs font-semibold text-muted-foreground hover:text-destructive underline-offset-4 hover:underline" (click)="setBodyType(null)">Prefiro não informar</button>
+
+              <button type="button" class="hm-ob-muted-link" (click)="setBodyType(null)">
+                Prefiro não informar
+              </button>
             </div>
 
             <!-- INTERESSES -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-4 pb-2 border-b border-border">
-                Interesses
-              </h2>
-              <p class="text-sm text-muted-foreground mb-4">Escolha alguns interesses tocando nas opções. Isso ajuda a personalizar suas recomendações.</p>
-              <div class="grid gap-3">
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Interesses</h2>
+              <p class="hm-ob-section-lead">Escolha alguns interesses tocando nas opções. Isso ajuda a personalizar suas recomendações.</p>
+
+              <div class="hm-ob-interest-groups">
                 @for (group of interestGroups; track group.title) {
                   <div class="hm-ob-interest-group">
                     <strong>{{ group.title }}</strong>
-                    <div class="flex flex-wrap gap-2 mt-2">
+                    <div class="hm-ob-interest-list">
                       @for (interest of group.items; track interest) {
-                        <button type="button" class="hm-ob-interest-option" [class.is-selected]="hasInterest(interest)" (click)="toggleInterest(interest)">
-                          @if (hasInterest(interest)) { <hm-icon name="check" size="12" /> }
+                        <button
+                          type="button"
+                          class="hm-ob-interest-option"
+                          [class.is-selected]="hasInterest(interest)"
+                          (click)="toggleInterest(interest)"
+                        >
+                          @if (hasInterest(interest)) {
+                            <hm-icon name="check" />
+                          }
                           {{ interest }}
                         </button>
                       }
@@ -238,30 +263,46 @@ const ONBOARDING_INTEREST_GROUPS = [
                   </div>
                 }
               </div>
+
               @if (interests().length) {
-                <div class="flex flex-wrap gap-2 mt-4 mb-3">
+                <div class="hm-ob-chips">
                   @for (tag of interests(); track tag) {
-                    <span class="hm-ob-chip" (click)="removeInterest(tag)">
-                      <span class="text-xs font-extrabold text-foreground">{{ tag }}</span><hm-icon name="x" size="14" />
-                    </span>
+                    <button type="button" class="hm-ob-chip" (click)="removeInterest(tag)">
+                      <span>{{ tag }}</span>
+                      <hm-icon name="x" />
+                    </button>
                   }
                 </div>
               }
-              <div class="grid grid-cols-[1fr_auto] gap-2 mt-3">
-                <input type="text" class="hm-ob-input" [value]="interestDraft()" (input)="onInterestInput($event)" (keydown)="onInterestKey($event)" (blur)="commitDraft()" placeholder="Outro interesse…" />
-                <button type="button" class="rounded-xl border border-border px-4 text-sm font-bold text-foreground hover:bg-accent" (click)="commitDraft()">Adicionar</button>
+
+              <div class="hm-ob-grid-2" style="margin-top: 14px;">
+                <div class="hm-field">
+                  <label class="hm-field-label is-subtle">Adicionar interesse</label>
+                  <input
+                    type="text"
+                    class="hm-ob-input"
+                    [value]="interestDraft()"
+                    (input)="onInterestInput($event)"
+                    (keydown)="onInterestKey($event)"
+                    (blur)="commitDraft()"
+                    placeholder="Outro interesse…"
+                  />
+                </div>
+                <div style="display:flex;align-items:flex-end;">
+                  <button type="button" class="hm-ob-add-interest" (click)="commitDraft()">
+                    Adicionar
+                  </button>
+                </div>
               </div>
             </div>
 
             <!-- CONFIGURAÇÕES DE DESCOBERTA -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-                Configurações de descoberta
-              </h2>
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Configurações de descoberta</h2>
 
-              <div class="space-y-3 mb-5">
-                <label class="block text-sm font-bold text-foreground mb-2 mt-3">Interessado em</label>
-                <div class="flex flex-wrap gap-2">
+              <div class="hm-field">
+                <label class="hm-field-label" style="margin-bottom: 0;">Interessado em</label>
+                <div class="hm-ob-choice-row">
                   @for (opt of GENDER_INTEREST_OPTIONS; track opt.value) {
                     <button
                       type="button"
@@ -273,7 +314,7 @@ const ONBOARDING_INTEREST_GROUPS = [
                     </button>
                   }
                 </div>
-                <p class="mt-2 text-xs text-muted-foreground">Selecione pelo menos uma opção. Essa escolha define quem aparece no seu Discovery.</p>
+                <p class="hm-ob-choice-hint">Selecione pelo menos uma opção. Essa escolha define quem aparece no seu Discovery.</p>
               </div>
 
               <div class="hm-ob-slider-card">
@@ -290,9 +331,9 @@ const ONBOARDING_INTEREST_GROUPS = [
                 />
                 <div class="hm-ob-divider"></div>
                 <div class="hm-ob-toggle-row">
-                  <div>
-                    <div class="text-sm font-extrabold text-foreground">Só mostrar nesta faixa</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">Fora da faixa não entra na descoberta</div>
+                  <div class="hm-ob-toggle-copy">
+                    <strong>Só mostrar nesta faixa</strong>
+                    <span>Fora da faixa não entra na descoberta</span>
                   </div>
                   <hm-switch
                     [checked]="strictAge()"
@@ -312,9 +353,9 @@ const ONBOARDING_INTEREST_GROUPS = [
                 />
                 <div class="hm-ob-divider"></div>
                 <div class="hm-ob-toggle-row">
-                  <div>
-                    <div class="text-sm font-extrabold text-foreground">Só mostrar neste raio</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">Quem estiver mais longe fica de fora</div>
+                  <div class="hm-ob-toggle-copy">
+                    <strong>Só mostrar neste raio</strong>
+                    <span>Quem estiver mais longe fica de fora</span>
                   </div>
                   <hm-switch
                     [checked]="strictDistance()"
@@ -325,12 +366,10 @@ const ONBOARDING_INTEREST_GROUPS = [
             </div>
 
             <!-- CORPO QUE VOCÊ BUSCA -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-4 pb-2 border-b border-border">
-                Corpo que você busca
-              </h2>
-              <p class="text-sm text-muted-foreground mb-4">Selecione os tipos de corpo que você deseja ver na descoberta. Deixe vazio para ver todos.</p>
-              <div class="flex flex-wrap gap-2">
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Corpo que você busca</h2>
+              <p class="hm-ob-section-lead">Selecione os tipos de corpo que você deseja ver na descoberta. Deixe vazio para ver todos.</p>
+              <div class="hm-ob-choice-row">
                 @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
                   <button
                     type="button"
@@ -338,7 +377,7 @@ const ONBOARDING_INTEREST_GROUPS = [
                     [class.is-selected]="preferredBodySet().has(opt.value)"
                     (click)="togglePreferredBody(opt.value)"
                   >
-                    <hm-icon [name]="opt.icon" size="15" />
+                    <hm-icon [name]="opt.icon" />
                     {{ opt.label }}
                   </button>
                 }
@@ -346,43 +385,39 @@ const ONBOARDING_INTEREST_GROUPS = [
             </div>
 
             <!-- RECOMENDAÇÕES -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-                Recomendações
-              </h2>
-              <div class="space-y-1">
-                <div class="hm-ob-toggle-row is-standalone">
-                  <div>
-                    <div class="text-sm font-extrabold text-foreground">Recentes primeiro</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">Prioriza pessoas que usaram o app recentemente</div>
-                  </div>
-                  <hm-switch
-                    [checked]="recentlyActiveFirst()"
-                    (checkedChange)="recentlyActiveFirst.set($event)"
-                  />
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Recomendações</h2>
+
+              <div class="hm-ob-toggle-row is-standalone">
+                <div class="hm-ob-toggle-copy">
+                  <strong>Recentes primeiro</strong>
+                  <span>Prioriza pessoas que usaram o app recentemente</span>
                 </div>
-                <div class="hm-ob-toggle-row is-standalone">
-                  <div>
-                    <div class="text-sm font-extrabold text-foreground">Modo global</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">Depois que acabar os perfis perto de você, mostra pessoas de qualquer lugar</div>
-                  </div>
-                  <hm-switch
-                    [checked]="globalMode()"
-                    (checkedChange)="globalMode.set($event)"
-                  />
+                <hm-switch
+                  [checked]="recentlyActiveFirst()"
+                  (checkedChange)="recentlyActiveFirst.set($event)"
+                />
+              </div>
+              <div class="hm-ob-toggle-row is-standalone">
+                <div class="hm-ob-toggle-copy">
+                  <strong>Modo global</strong>
+                  <span>Depois que acabar os perfis perto de você, mostra pessoas de qualquer lugar</span>
                 </div>
+                <hm-switch
+                  [checked]="globalMode()"
+                  (checkedChange)="globalMode.set($event)"
+                />
               </div>
             </div>
 
             <!-- VISIBILIDADE -->
-            <div>
-              <h2 class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-foreground/55 mb-5 pb-2 border-b border-border">
-                Visibilidade
-              </h2>
+            <div class="hm-ob-section">
+              <h2 class="hm-ob-section-title">Visibilidade</h2>
+
               <div class="hm-ob-toggle-row is-standalone">
-                <div>
-                  <div class="text-sm font-extrabold text-foreground">Ativar descoberta</div>
-                  <div class="text-xs text-muted-foreground mt-0.5">Desligado, seu perfil não aparece na pilha de ninguém (matches antigos continuam)</div>
+                <div class="hm-ob-toggle-copy">
+                  <strong>Ativar descoberta</strong>
+                  <span>Desligado, seu perfil não aparece na pilha de ninguém (matches antigos continuam)</span>
                 </div>
                 <hm-switch
                   [checked]="discoverable()"
@@ -394,15 +429,15 @@ const ONBOARDING_INTEREST_GROUPS = [
             <!-- BOTÃO -->
             <button
               type="submit"
+              class="hm-ob-submit"
               [disabled]="onboardingForm().invalid() || onboardingForm().submitting()"
-              class="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-base font-bold text-primary-foreground shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               @if (onboardingForm().submitting()) {
-                <hm-icon name="refresh-cw" size="16" class="animate-spin" />
+                <hm-icon name="refresh-cw" class="animate-spin" />
                 Salvando...
               } @else {
                 Salvar e começar
-                <hm-icon name="sparkles" size="16" />
+                <hm-icon name="sparkles" />
               }
             </button>
           </form>
@@ -461,7 +496,7 @@ export class OnboardingPage implements OnInit {
     longitude: null as number | null,
   });
 
-  readonly onboardingForm = form(this.model, p => {
+  readonly onboardingForm = form(this.model, (p) => {
     required(p.displayName, { message: 'Informe seu nome' });
     minLength(p.displayName, 2, { message: 'Nome muito curto' });
     required(p.birthDate, { message: 'Informe sua data de nascimento' });
@@ -488,22 +523,22 @@ export class OnboardingPage implements OnInit {
 
   hasInterest(interest: string): boolean {
     const key = this.normalize(interest);
-    return this.interests().some(item => this.normalize(item) === key);
+    return this.interests().some((item: string) => this.normalize(item) === key);
   }
 
   toggleInterest(interest: string): void {
     const key = this.normalize(interest);
-    const existing = this.interests().find(item => this.normalize(item) === key);
+    const existing = this.interests().find((item: string) => this.normalize(item) === key);
     if (existing) this.removeInterest(existing);
-    else if (this.interests().length < 30) this.interests.update(list => [...list, interest]);
+    else if (this.interests().length < 30) this.interests.update((list: string[]) => [...list, interest]);
   }
 
   onStateInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     const previous = this.model().state;
-    const state = this.states().find(item =>
+    const state = this.states().find((item: BrazilianStateView) =>
       this.normalize(item.name) === this.normalize(value) || this.normalize(item.code) === this.normalize(value));
-    this.model.update(model => ({
+    this.model.update((model: OnboardingFormModel) => ({
       ...model,
       state: value,
       city: state && this.normalize(previous) !== this.normalize(value) ? '' : model.city,
@@ -520,7 +555,7 @@ export class OnboardingPage implements OnInit {
 
   onCityInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
-    this.model.update(model => ({ ...model, city: value, latitude: null, longitude: null }));
+    this.model.update((model: OnboardingFormModel) => ({ ...model, city: value, latitude: null, longitude: null }));
   }
 
   private async loadCities(state: string): Promise<void> {
@@ -555,7 +590,7 @@ export class OnboardingPage implements OnInit {
   commitDraft(): void {
     const raw = this.interestDraft();
     if (!raw) return;
-    const parts = raw.split(/[,;]/g).map(p => p.trim()).filter(Boolean);
+    const parts: string[] = raw.split(/[,;]/g).map((p: string) => p.trim()).filter(Boolean);
     if (parts.length === 0) {
       const trimmed = raw.trim();
       if (trimmed) parts.push(trimmed);
@@ -564,14 +599,14 @@ export class OnboardingPage implements OnInit {
     const merged = [...this.interests()];
     for (const part of parts) {
       if (merged.length >= 30) break;
-      if (!merged.some(item => this.normalize(item) === this.normalize(part))) merged.push(part);
+      if (!merged.some((item: string) => this.normalize(item) === this.normalize(part))) merged.push(part);
     }
     this.interests.set(merged);
     this.interestDraft.set('');
   }
 
   removeInterest(tag: string): void {
-    this.interests.set(this.interests().filter(i => i !== tag));
+    this.interests.set(this.interests().filter((i: string) => i !== tag));
   }
 
   private normalize(value: string): string {
@@ -581,11 +616,11 @@ export class OnboardingPage implements OnInit {
   private locationSelectionValid(): boolean {
     const current = this.model();
     if (this.states().length) {
-      const state = this.states().find(item =>
+      const state = this.states().find((item: BrazilianStateView) =>
         this.normalize(item.name) === this.normalize(current.state) || this.normalize(item.code) === this.normalize(current.state));
       if (!state) return false;
     }
-    if (this.cities().length && !this.cities().some(city => this.normalize(city.name) === this.normalize(current.city))) {
+    if (this.cities().length && !this.cities().some((city: BrazilianCityView) => this.normalize(city.name) === this.normalize(current.city))) {
       return false;
     }
     return true;
@@ -631,7 +666,7 @@ export class OnboardingPage implements OnInit {
           lookingFor: Array.from(this.lookingForSet()),
           preferredBodyTypes: Array.from(this.preferredBodySet()),
         };
-        const saved = await firstValueFrom(this.profileApi.save(payload));
+        await firstValueFrom(this.profileApi.save(payload));
         this.profileStore.clear();
         await this.profileStore.reload();
         await this.router.navigate(['/app/discover']);

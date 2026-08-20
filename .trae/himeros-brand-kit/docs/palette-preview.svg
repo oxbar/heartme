@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+<rect width="1200" height="520" fill="#070707"/>
+<text x="56" y="70" font-family="Arial, sans-serif" font-size="34" fill="#FFFFFF" font-weight="700">Himeros — Brand Palette</text>
+<g font-family="Arial, sans-serif" font-size="20">
+<rect x="56" y="120" width="200" height="220" rx="20" fill="#ECA420"/><text x="76" y="380" fill="#FFFFFF">Gold #ECA420</text>
+<rect x="282" y="120" width="200" height="220" rx="20" fill="#D68F12"/><text x="302" y="380" fill="#FFFFFF">Hover #D68F12</text>
+<rect x="508" y="120" width="200" height="220" rx="20" fill="#151515" stroke="#2C2C2C"/><text x="528" y="380" fill="#FFFFFF">Surface #151515</text>
+<rect x="734" y="120" width="200" height="220" rx="20" fill="#FFFFFF"/><text x="754" y="380" fill="#FFFFFF">White #FFFFFF</text>
+<rect x="960" y="120" width="184" height="220" rx="20" fill="#B8B8B8"/><text x="980" y="380" fill="#FFFFFF">Muted #B8B8B8</text>
+</g>
+</svg>

@@ -47,9 +47,9 @@ import { IconComponent } from '../../ui/icon/icon.component';
                   <span>Perfis com contexto</span>
                 </div>
               </div>
-              <div class="relative min-h-[500px] rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 p-8 flex items-center justify-center">
+              <div class="relative min-h-[500px] rounded-3xl bg-gradient-to-br from-accent/20 via-black to-surface p-8 flex items-center justify-center border border-border">
                 <div class="w-full max-w-sm rounded-2xl bg-card shadow-xl overflow-hidden border border-border">
-                  <div class="aspect-[4/5] bg-gradient-to-br from-primary/20 via-accent/20 to-secondary/40 flex items-center justify-center relative">
+                  <div class="aspect-[4/5] bg-gradient-to-br from-primary/25 via-accent/15 to-surface flex items-center justify-center relative">
                     <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_25%,_white_0_10%,_transparent_11%)] opacity-50"></div>
                     <div class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
                       <hm-icon name="heart" size="48" class="text-primary" />

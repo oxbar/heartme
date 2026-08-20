@@ -1,0 +1,66 @@
+/* HIMEROS Brand Tokens — Gold / Black / White */
+:root {
+  /* Core brand */
+  --himeros-gold: #ECA420;
+  --himeros-gold-hover: #D68F12;
+  --himeros-gold-active: #B9750C;
+  --himeros-gold-soft: #FFF3D6;
+  --himeros-gold-muted: #F5CC7C;
+
+  --himeros-black: #070707;
+  --himeros-black-soft: #111111;
+  --himeros-surface: #151515;
+  --himeros-surface-elevated: #1C1C1C;
+  --himeros-border: #2C2C2C;
+
+  --himeros-white: #FFFFFF;
+  --himeros-text: #F8F8F8;
+  --himeros-text-muted: #B8B8B8;
+  --himeros-text-dark: #111111;
+
+  /* Semantic */
+  --himeros-primary: var(--himeros-gold);
+  --himeros-primary-foreground: var(--himeros-black);
+  --himeros-background: var(--himeros-black);
+  --himeros-foreground: var(--himeros-text);
+  --himeros-card: var(--himeros-surface);
+  --himeros-card-foreground: var(--himeros-text);
+  --himeros-ring: #F4BE56;
+  --himeros-danger: #EF4444;
+  --himeros-success: #22C55E;
+
+  /* Shape / effects */
+  --himeros-radius-sm: 10px;
+  --himeros-radius-md: 16px;
+  --himeros-radius-lg: 24px;
+  --himeros-radius-pill: 999px;
+  --himeros-shadow-card: 0 16px 50px rgb(0 0 0 / 35%);
+  --himeros-shadow-gold: 0 0 0 1px rgb(236 164 32 / 20%), 0 10px 35px rgb(236 164 32 / 12%);
+}
+
+html, body {
+  background: var(--himeros-background);
+  color: var(--himeros-foreground);
+}
+
+.himeros-btn-primary {
+  background: var(--himeros-primary);
+  color: var(--himeros-primary-foreground);
+  border: 1px solid color-mix(in srgb, var(--himeros-primary) 78%, #fff);
+  border-radius: var(--himeros-radius-pill);
+  font-weight: 700;
+}
+.himeros-btn-primary:hover { background: var(--himeros-gold-hover); }
+.himeros-btn-primary:active { background: var(--himeros-gold-active); }
+.himeros-btn-primary:focus-visible { outline: 3px solid color-mix(in srgb, var(--himeros-ring) 55%, transparent); outline-offset: 3px; }
+
+.himeros-card {
+  background: var(--himeros-card);
+  color: var(--himeros-card-foreground);
+  border: 1px solid var(--himeros-border);
+  border-radius: var(--himeros-radius-md);
+  box-shadow: var(--himeros-shadow-card);
+}
+
+.himeros-accent-text { color: var(--himeros-gold); }
+.himeros-divider { border-color: var(--himeros-border); }
