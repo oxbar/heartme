@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { form, FormField, minLength, required, submit } from '@angular/forms/signals';
 import { ProfileApi } from '../../core/api/profile.api';
@@ -9,7 +9,6 @@ import { firstValueFrom } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from '../../ui/icon/icon.component';
 import { SliderComponent } from '../../ui/slider/slider.component';
-import { SwitchComponent } from '../../ui/switch/switch.component';
 
 interface OnboardingFormModel {
   displayName: string;
@@ -61,385 +60,394 @@ const ONBOARDING_INTEREST_GROUPS: InterestGroup[] = [
 
 
 @Component({
-  imports: [FormField, CommonModule, IconComponent, SliderComponent, SwitchComponent],
+  imports: [FormField, CommonModule, IconComponent, SliderComponent],
   standalone: true,
   template: `
     <div class="hm-ob-shell">
       <div class="hm-ob-inner">
         <div class="hm-ob-header">
-          <p class="hm-auth-eyebrow">Passo 1 de 1</p>
-          <h1>Complete seu perfil</h1>
-          <p>Essas informações nos ajudam a conectar você com as pessoas certas.</p>
+          <p class="hm-auth-eyebrow">Seu perfil, sem burocracia</p>
+          <h1>Vamos montar seu matching</h1>
+          <p>Três passos curtos para entendermos quem você é, quem procura e quais afinidades importam.</p>
         </div>
 
-        <div class="hm-ob-card">
-          @if (error()) {
-            <div role="alert" class="hm-auth-alert" style="margin-bottom: 28px;">
-              <span style="display:grid;place-items:center;flex:0 0 auto;width:20px;height:20px;">
-                <hm-icon name="alert-triangle" size="18" />
+        <nav class="hm-ob-progress" aria-label="Progresso do cadastro">
+          @for (step of steps; track step.id) {
+            <div
+              class="hm-ob-progress-item"
+              [class.is-active]="currentStep() === step.id"
+              [class.is-complete]="currentStep() > step.id"
+            >
+              <span class="hm-ob-progress-dot">
+                @if (currentStep() > step.id) { <hm-icon name="check" size="14" /> }
+                @else { {{ step.id }} }
               </span>
+              <span class="hm-ob-progress-copy">
+                <strong>{{ step.title }}</strong>
+                <small>{{ step.caption }}</small>
+              </span>
+            </div>
+          }
+        </nav>
+
+        <div class="hm-ob-card">
+          <div class="hm-ob-step-heading">
+            <span>Passo {{ currentStep() }} de {{ steps.length }}</span>
+            <h2>{{ currentStepMeta().title }}</h2>
+            <p>{{ currentStepMeta().description }}</p>
+          </div>
+
+          @if (error()) {
+            <div role="alert" class="hm-auth-alert hm-ob-alert">
+              <span class="hm-ob-alert-icon"><hm-icon name="alert-triangle" size="18" /></span>
               <div>{{ error() }}</div>
             </div>
           }
 
           <form (submit)="onSubmit($event)" novalidate>
-            <!-- DADOS BÁSICOS -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Dados básicos</h2>
-
-              <div class="hm-field">
-                <label class="hm-field-label" for="ob-displayName">Nome exibido</label>
-                <input
-                  id="ob-displayName" type="text"
-                  class="hm-ob-input"
-                  [formField]="onboardingForm.displayName"
-                  placeholder="Como quer ser chamado(a)"
-                />
-                @if (onboardingForm.displayName().touched() && onboardingForm.displayName().invalid()) {
-                  <p class="hm-field-error">{{ onboardingForm.displayName().errors()[0]?.message }}</p>
-                }
-              </div>
-
-              <div class="hm-ob-grid-2">
-                <div class="hm-field">
-                  <label class="hm-field-label" for="ob-birthDate">Data de nascimento</label>
-                  <input
-                    id="ob-birthDate" type="date"
-                    class="hm-ob-input"
-                    [formField]="onboardingForm.birthDate"
-                  />
-                  @if (onboardingForm.birthDate().touched() && onboardingForm.birthDate().invalid()) {
-                    <p class="hm-field-error">{{ onboardingForm.birthDate().errors()[0]?.message }}</p>
-                  }
-                </div>
-                <div class="hm-field">
-                  <label class="hm-field-label" for="ob-gender">Gênero</label>
-                  <select
-                    id="ob-gender"
-                    class="hm-ob-input"
-                    [formField]="onboardingForm.gender"
-                  >
-                    <option value="">Selecione…</option>
-                    <option value="MAN">Homem</option>
-                    <option value="WOMAN">Mulher</option>
-                    <option value="NON_BINARY">Não-binário</option>
-                    <option value="OTHER">Outro</option>
-                  </select>
-                  @if (onboardingForm.gender().touched() && onboardingForm.gender().invalid()) {
-                    <p class="hm-field-error">{{ onboardingForm.gender().errors()[0]?.message }}</p>
-                  }
-                </div>
-              </div>
-            </div>
-
-            <!-- LOCALIZAÇÃO -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Localização</h2>
-
-              <div class="hm-ob-location-callout">
-                <div class="hm-ob-location-head">
-                  <span class="hm-ob-location-icon"><hm-icon name="map-pin" /></span>
-                  <div class="hm-ob-location-copy">
-                    <strong>Onde você mora</strong>
-                    <span>Usada para encontrar pessoas próximas</span>
+            @if (currentStep() === 1) {
+              <section class="hm-ob-step-panel" aria-labelledby="ob-step-basics">
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading">
+                    <span class="hm-ob-section-number">01</span>
+                    <div>
+                      <h3 id="ob-step-basics">O essencial sobre você</h3>
+                      <p>Usamos idade, gênero e localização para formar o conjunto inicial de candidatos.</p>
+                    </div>
                   </div>
-                </div>
 
-                <div class="hm-ob-grid-2">
                   <div class="hm-field">
-                    <label class="hm-field-label is-subtle" for="ob-state">Estado</label>
+                    <label class="hm-field-label" for="ob-displayName">Nome exibido</label>
                     <input
-                      id="ob-state" type="text"
+                      id="ob-displayName" type="text"
                       class="hm-ob-input"
-                      list="ob-state-options"
-                      [formField]="onboardingForm.state"
-                      (input)="onStateInput($event)"
-                      placeholder="Santa Catarina"
+                      [formField]="onboardingForm.displayName"
+                      placeholder="Como quer ser chamado(a)"
                     />
-                    <datalist id="ob-state-options">
-                      @for (state of states(); track state.code) { <option [value]="state.name">{{ state.code }}</option> }
-                    </datalist>
+                    @if (onboardingForm.displayName().touched() && onboardingForm.displayName().invalid()) {
+                      <p class="hm-field-error">{{ onboardingForm.displayName().errors()[0]?.message }}</p>
+                    }
                   </div>
-                  <div class="hm-field">
-                    <label class="hm-field-label is-subtle" for="ob-city">Cidade</label>
-                    <div class="hm-input-wrap has-icon-right">
-                      <input
-                        id="ob-city" type="text"
-                        class="hm-ob-input"
-                        list="ob-city-options"
-                        [formField]="onboardingForm.city"
-                        (input)="onCityInput($event)"
-                        [placeholder]="cityLoading() ? 'Carregando cidades…' : 'Blumenau'"
-                      />
-                      @if (cityLoading()) {
-                        <span class="hm-ob-loader" aria-hidden="true">
-                          <hm-icon name="loader-2" class="animate-spin" />
-                        </span>
+
+                  <div class="hm-ob-grid-2">
+                    <div class="hm-field">
+                      <label class="hm-field-label" for="ob-birthDate">Data de nascimento</label>
+                      <input id="ob-birthDate" type="date" class="hm-ob-input" [formField]="onboardingForm.birthDate" />
+                      @if (onboardingForm.birthDate().touched() && onboardingForm.birthDate().invalid()) {
+                        <p class="hm-field-error">{{ onboardingForm.birthDate().errors()[0]?.message }}</p>
                       }
                     </div>
-                    <datalist id="ob-city-options">
-                      @for (city of cities(); track city.id) { <option [value]="city.name"></option> }
-                    </datalist>
-                    @if (onboardingForm.city().touched() && onboardingForm.city().invalid()) {
-                      <p class="hm-field-error">{{ onboardingForm.city().errors()[0]?.message }}</p>
-                    }
+                    <div class="hm-field">
+                      <label class="hm-field-label" for="ob-gender">Gênero</label>
+                      <select id="ob-gender" class="hm-ob-input" [formField]="onboardingForm.gender">
+                        <option value="">Selecione…</option>
+                        <option value="MAN">Homem</option>
+                        <option value="WOMAN">Mulher</option>
+                        <option value="NON_BINARY">Não-binário</option>
+                        <option value="OTHER">Outro</option>
+                      </select>
+                      @if (onboardingForm.gender().touched() && onboardingForm.gender().invalid()) {
+                        <p class="hm-field-error">{{ onboardingForm.gender().errors()[0]?.message }}</p>
+                      }
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <!-- SOBRE VOCÊ -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Sobre você</h2>
-              <div class="hm-field">
-                <label class="hm-field-label" for="ob-bio">Biografia</label>
-                <textarea
-                  id="ob-bio" rows="4"
-                  class="hm-ob-input"
-                  [formField]="onboardingForm.bio"
-                  placeholder="Conte um pouco sobre você e o que procura..."
-                ></textarea>
-              </div>
-            </div>
-
-            <!-- SEU TIPO DE CORPO -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Seu tipo de corpo</h2>
-              <p class="hm-ob-section-lead">Como você se descreve? Ajuda a combinar com quem procura perfis como o seu.</p>
-
-              <div class="hm-ob-body-grid">
-                @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
-                  <button
-                    type="button"
-                    class="hm-ob-body-card"
-                    [class.is-selected]="bodyType() === opt.value"
-                    (click)="setBodyType(opt.value)"
-                  >
-                    <span class="hm-ob-body-icon" [class.is-selected]="bodyType() === opt.value">
-                      <hm-icon [name]="opt.icon" />
-                    </span>
-                    <div class="hm-ob-body-copy">
-                      <strong>{{ opt.label }}</strong>
-                      <span>{{ opt.hint }}</span>
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading is-compact">
+                    <span class="hm-ob-section-number"><hm-icon name="map-pin" size="16" /></span>
+                    <div>
+                      <h3>Onde você está</h3>
+                      <p>Cidade e coordenadas melhoram a relevância geográfica sem expor sua posição exata.</p>
                     </div>
-                    @if (bodyType() === opt.value) {
-                      <span class="hm-ob-body-check">
-                        <hm-icon name="check" />
-                      </span>
-                    }
-                  </button>
-                }
-              </div>
+                  </div>
 
-              <button type="button" class="hm-ob-muted-link" (click)="setBodyType(null)">
-                Prefiro não informar
-              </button>
-            </div>
+                  <div class="hm-ob-location-callout">
+                    <div class="hm-ob-grid-2">
+                      <div class="hm-field">
+                        <label class="hm-field-label is-subtle" for="ob-state">Estado</label>
+                        <input
+                          id="ob-state" type="text"
+                          class="hm-ob-input"
+                          list="ob-state-options"
+                          [formField]="onboardingForm.state"
+                          (input)="onStateInput($event)"
+                          placeholder="Santa Catarina"
+                        />
+                        <datalist id="ob-state-options">
+                          @for (state of states(); track state.code) { <option [value]="state.name">{{ state.code }}</option> }
+                        </datalist>
+                        @if (onboardingForm.state().touched() && onboardingForm.state().invalid()) {
+                          <p class="hm-field-error">{{ onboardingForm.state().errors()[0]?.message }}</p>
+                        }
+                      </div>
+                      <div class="hm-field">
+                        <label class="hm-field-label is-subtle" for="ob-city">Cidade</label>
+                        <div class="hm-input-wrap has-icon-right">
+                          <input
+                            id="ob-city" type="text"
+                            class="hm-ob-input"
+                            list="ob-city-options"
+                            [formField]="onboardingForm.city"
+                            (input)="onCityInput($event)"
+                            [placeholder]="cityLoading() ? 'Carregando cidades…' : 'Blumenau'"
+                          />
+                          @if (cityLoading()) {
+                            <span class="hm-ob-loader" aria-hidden="true"><hm-icon name="loader-2" class="animate-spin" /></span>
+                          }
+                        </div>
+                        <datalist id="ob-city-options">
+                          @for (city of cities(); track city.id) { <option [value]="city.name"></option> }
+                        </datalist>
+                        @if (onboardingForm.city().touched() && onboardingForm.city().invalid()) {
+                          <p class="hm-field-error">{{ onboardingForm.city().errors()[0]?.message }}</p>
+                        }
+                      </div>
+                    </div>
 
-            <!-- INTERESSES -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Interesses</h2>
-              <p class="hm-ob-section-lead">Escolha alguns interesses tocando nas opções. Isso ajuda a personalizar suas recomendações.</p>
+                    <div class="hm-ob-geo-row">
+                      <div>
+                        <strong>Distância mais precisa</strong>
+                        @if (geoStatus() === 'ready') {
+                          <span class="is-success">Localização precisa ativada</span>
+                        } @else if (geoStatus() === 'denied') {
+                          <span>Permissão recusada. Você pode continuar usando cidade e estado.</span>
+                        } @else if (geoStatus() === 'unavailable') {
+                          <span>Localização precisa indisponível neste navegador.</span>
+                        } @else {
+                          <span>Opcional, mas permite ao motor calcular quilômetros reais entre perfis.</span>
+                        }
+                      </div>
+                      <button type="button" class="hm-ob-secondary-action" (click)="requestPreciseLocation()" [disabled]="geoStatus() === 'loading'">
+                        <hm-icon [name]="geoStatus() === 'loading' ? 'loader-2' : 'crosshair'" [class]="geoStatus() === 'loading' ? 'animate-spin' : ''" />
+                        {{ geoStatus() === 'ready' ? 'Atualizar' : 'Usar localização' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            }
 
-              <div class="hm-ob-interest-groups">
-                @for (group of interestGroups; track group.title) {
-                  <div class="hm-ob-interest-group">
-                    <strong>{{ group.title }}</strong>
-                    <div class="hm-ob-interest-list">
-                      @for (interest of group.items; track interest) {
+            @if (currentStep() === 2) {
+              <section class="hm-ob-step-panel" aria-labelledby="ob-step-preferences">
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading">
+                    <span class="hm-ob-section-number">02</span>
+                    <div>
+                      <h3 id="ob-step-preferences">Quem você quer encontrar</h3>
+                      <p>Estas preferências têm impacto direto no filtro e na ordem dos perfis exibidos.</p>
+                    </div>
+                  </div>
+
+                  <div class="hm-field">
+                    <label class="hm-field-label">Tenho interesse em</label>
+                    <div class="hm-ob-choice-row">
+                      @for (opt of GENDER_INTEREST_OPTIONS; track opt.value) {
                         <button
                           type="button"
-                          class="hm-ob-interest-option"
-                          [class.is-selected]="hasInterest(interest)"
-                          (click)="toggleInterest(interest)"
+                          class="hm-ob-choice-chip"
+                          [class.is-selected]="lookingForSet().has(opt.value)"
+                          (click)="toggleLookingFor(opt.value)"
                         >
-                          @if (hasInterest(interest)) {
-                            <hm-icon name="check" />
-                          }
-                          {{ interest }}
+                          @if (lookingForSet().has(opt.value)) { <hm-icon name="check" size="15" /> }
+                          {{ opt.label }}
                         </button>
                       }
                     </div>
+                    <p class="hm-ob-choice-hint">Obrigatório: isso define o filtro de gênero aplicado no Discovery.</p>
                   </div>
-                }
-              </div>
 
-              @if (interests().length) {
-                <div class="hm-ob-chips">
-                  @for (tag of interests(); track tag) {
-                    <button type="button" class="hm-ob-chip" (click)="removeInterest(tag)">
-                      <span>{{ tag }}</span>
-                      <hm-icon name="x" />
-                    </button>
+                  <div class="hm-ob-slider-card">
+                    <hm-slider
+                      [dual]="true"
+                      [min]="18"
+                      [max]="100"
+                      [valueMin]="minAge()"
+                      [valueMax]="maxAge()"
+                      label="Faixa de idade preferida"
+                      suffix=" anos"
+                      (valueMinChange)="minAge.set($event)"
+                      (valueMaxChange)="maxAge.set($event)"
+                    />
+                    <p class="hm-ob-card-note">A idade funciona como preferência de ranking. Você poderá transformar isso em filtro rígido depois, nas configurações.</p>
+                  </div>
+
+                  @if (hasPreciseLocation()) {
+                    <div class="hm-ob-slider-card">
+                      <hm-slider
+                        [min]="1"
+                        [max]="500"
+                        [valueMin]="maxDistanceKm()"
+                        label="Distância preferida"
+                        suffix=" km"
+                        (valueMinChange)="maxDistanceKm.set($event)"
+                      />
+                      <p class="hm-ob-card-note">Com sua localização precisa ativa, a distância passa a participar do score do matching.</p>
+                    </div>
+                  } @else {
+                    <div class="hm-ob-inline-note">
+                      <hm-icon name="map-pin" size="17" />
+                      <span>Distância em km ficou oculta porque ainda não temos coordenadas confiáveis. Assim evitamos prometer um filtro que o backend não conseguiria calcular.</span>
+                    </div>
                   }
                 </div>
-              }
 
-              <div class="hm-ob-grid-2" style="margin-top: 14px;">
-                <div class="hm-field">
-                  <label class="hm-field-label is-subtle">Adicionar interesse</label>
-                  <input
-                    type="text"
-                    class="hm-ob-input"
-                    [value]="interestDraft()"
-                    (input)="onInterestInput($event)"
-                    (keydown)="onInterestKey($event)"
-                    (blur)="commitDraft()"
-                    placeholder="Outro interesse…"
-                  />
-                </div>
-                <div style="display:flex;align-items:flex-end;">
-                  <button type="button" class="hm-ob-add-interest" (click)="commitDraft()">
-                    Adicionar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- CONFIGURAÇÕES DE DESCOBERTA -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Configurações de descoberta</h2>
-
-              <div class="hm-field">
-                <label class="hm-field-label" style="margin-bottom: 0;">Interessado em</label>
-                <div class="hm-ob-choice-row">
-                  @for (opt of GENDER_INTEREST_OPTIONS; track opt.value) {
-                    <button
-                      type="button"
-                      class="hm-ob-choice-chip"
-                      [class.is-selected]="lookingForSet().has(opt.value)"
-                      (click)="toggleLookingFor(opt.value)"
-                    >
-                      {{ opt.label }}
-                    </button>
-                  }
-                </div>
-                <p class="hm-ob-choice-hint">Selecione pelo menos uma opção. Essa escolha define quem aparece no seu Discovery.</p>
-              </div>
-
-              <div class="hm-ob-slider-card">
-                <hm-slider
-                  [dual]="true"
-                  [min]="18"
-                  [max]="100"
-                  [valueMin]="minAge()"
-                  [valueMax]="maxAge()"
-                  label="Faixa de idade"
-                  suffix=" anos"
-                  (valueMinChange)="minAge.set($event)"
-                  (valueMaxChange)="maxAge.set($event)"
-                />
-                <div class="hm-ob-divider"></div>
-                <div class="hm-ob-toggle-row">
-                  <div class="hm-ob-toggle-copy">
-                    <strong>Só mostrar nesta faixa</strong>
-                    <span>Fora da faixa não entra na descoberta</span>
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading is-compact">
+                    <span class="hm-ob-section-number"><hm-icon name="sparkles" size="16" /></span>
+                    <div>
+                      <h3>Preferência física <small>opcional</small></h3>
+                      <p>Serve como sinal suave de ranking; deixar vazio mantém o Discovery mais aberto.</p>
+                    </div>
                   </div>
-                  <hm-switch
-                    [checked]="strictAge()"
-                    (checkedChange)="strictAge.set($event)"
-                  />
-                </div>
-              </div>
-
-              <div class="hm-ob-slider-card">
-                <hm-slider
-                  [min]="1"
-                  [max]="500"
-                  [valueMin]="maxDistanceKm()"
-                  label="Distância máxima"
-                  suffix=" km"
-                  (valueMinChange)="maxDistanceKm.set($event)"
-                />
-                <div class="hm-ob-divider"></div>
-                <div class="hm-ob-toggle-row">
-                  <div class="hm-ob-toggle-copy">
-                    <strong>Só mostrar neste raio</strong>
-                    <span>Quem estiver mais longe fica de fora</span>
+                  <div class="hm-ob-choice-row">
+                    @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
+                      <button
+                        type="button"
+                        class="hm-ob-choice-chip is-soft"
+                        [class.is-selected]="preferredBodySet().has(opt.value)"
+                        (click)="togglePreferredBody(opt.value)"
+                      >
+                        <hm-icon [name]="opt.icon" />
+                        {{ opt.label }}
+                      </button>
+                    }
                   </div>
-                  <hm-switch
-                    [checked]="strictDistance()"
-                    (checkedChange)="strictDistance.set($event)"
-                  />
                 </div>
-              </div>
-            </div>
+              </section>
+            }
 
-            <!-- CORPO QUE VOCÊ BUSCA -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Corpo que você busca</h2>
-              <p class="hm-ob-section-lead">Selecione os tipos de corpo que você deseja ver na descoberta. Deixe vazio para ver todos.</p>
-              <div class="hm-ob-choice-row">
-                @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
-                  <button
-                    type="button"
-                    class="hm-ob-choice-chip is-soft"
-                    [class.is-selected]="preferredBodySet().has(opt.value)"
-                    (click)="togglePreferredBody(opt.value)"
-                  >
-                    <hm-icon [name]="opt.icon" />
-                    {{ opt.label }}
-                  </button>
-                }
-              </div>
-            </div>
+            @if (currentStep() === 3) {
+              <section class="hm-ob-step-panel" aria-labelledby="ob-step-affinity">
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading">
+                    <span class="hm-ob-section-number">03</span>
+                    <div>
+                      <h3 id="ob-step-affinity">Afinidade e personalidade</h3>
+                      <p>Interesses em comum aumentam o score e ajudam a quebrar o gelo depois do match.</p>
+                    </div>
+                  </div>
 
-            <!-- RECOMENDAÇÕES -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Recomendações</h2>
+                  <div class="hm-ob-interest-summary">
+                    <div>
+                      <strong>Escolha pelo menos 3 interesses</strong>
+                      <span>O motor compara interesses em comum usando similaridade Jaccard.</span>
+                    </div>
+                    <span class="hm-ob-counter" [class.is-ready]="interests().length >= 3">{{ interests().length }}/30</span>
+                  </div>
 
-              <div class="hm-ob-toggle-row is-standalone">
-                <div class="hm-ob-toggle-copy">
-                  <strong>Recentes primeiro</strong>
-                  <span>Prioriza pessoas que usaram o app recentemente</span>
+                  <div class="hm-ob-interest-groups">
+                    @for (group of interestGroups; track group.title) {
+                      <div class="hm-ob-interest-group">
+                        <strong>{{ group.title }}</strong>
+                        <div class="hm-ob-interest-list">
+                          @for (interest of group.items; track interest) {
+                            <button
+                              type="button"
+                              class="hm-ob-interest-option"
+                              [class.is-selected]="hasInterest(interest)"
+                              (click)="toggleInterest(interest)"
+                            >
+                              @if (hasInterest(interest)) { <hm-icon name="check" /> }
+                              {{ interest }}
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  <div class="hm-ob-custom-interest">
+                    <div class="hm-field">
+                      <label class="hm-field-label is-subtle">Não encontrou o seu?</label>
+                      <input
+                        type="text"
+                        class="hm-ob-input"
+                        [value]="interestDraft()"
+                        (input)="onInterestInput($event)"
+                        (keydown)="onInterestKey($event)"
+                        (blur)="commitDraft()"
+                        placeholder="Adicionar outro interesse…"
+                      />
+                    </div>
+                    <button type="button" class="hm-ob-add-interest" (click)="commitDraft()">Adicionar</button>
+                  </div>
                 </div>
-                <hm-switch
-                  [checked]="recentlyActiveFirst()"
-                  (checkedChange)="recentlyActiveFirst.set($event)"
-                />
-              </div>
-              <div class="hm-ob-toggle-row is-standalone">
-                <div class="hm-ob-toggle-copy">
-                  <strong>Modo global</strong>
-                  <span>Depois que acabar os perfis perto de você, mostra pessoas de qualquer lugar</span>
+
+                <div class="hm-ob-section">
+                  <div class="hm-ob-section-heading is-compact">
+                    <span class="hm-ob-section-number"><hm-icon name="user" size="16" /></span>
+                    <div>
+                      <h3>Como você se descreve <small>opcional</small></h3>
+                      <p>Esses dados melhoram a qualidade do perfil e podem aumentar compatibilidade.</p>
+                    </div>
+                  </div>
+
+                  <div class="hm-ob-body-grid">
+                    @for (opt of BODY_TYPE_OPTIONS; track opt.value) {
+                      <button
+                        type="button"
+                        class="hm-ob-body-card"
+                        [class.is-selected]="bodyType() === opt.value"
+                        (click)="setBodyType(opt.value)"
+                      >
+                        <span class="hm-ob-body-icon" [class.is-selected]="bodyType() === opt.value"><hm-icon [name]="opt.icon" /></span>
+                        <div class="hm-ob-body-copy"><strong>{{ opt.label }}</strong><span>{{ opt.hint }}</span></div>
+                        @if (bodyType() === opt.value) { <span class="hm-ob-body-check"><hm-icon name="check" /></span> }
+                      </button>
+                    }
+                  </div>
+                  <button type="button" class="hm-ob-muted-link" (click)="setBodyType(null)">Prefiro não informar</button>
+
+                  <div class="hm-field hm-ob-bio-field">
+                    <label class="hm-field-label" for="ob-bio">Uma bio curta <span class="hm-ob-optional">opcional</span></label>
+                    <textarea
+                      id="ob-bio" rows="4"
+                      class="hm-ob-input"
+                      [formField]="onboardingForm.bio"
+                      placeholder="Conte um pouco sobre você e o que gostaria de encontrar…"
+                    ></textarea>
+                    <p class="hm-ob-choice-hint">Perfis com bio completa também recebem sinal positivo de qualidade no ranking.</p>
+                  </div>
                 </div>
-                <hm-switch
-                  [checked]="globalMode()"
-                  (checkedChange)="globalMode.set($event)"
-                />
-              </div>
-            </div>
 
-            <!-- VISIBILIDADE -->
-            <div class="hm-ob-section">
-              <h2 class="hm-ob-section-title">Visibilidade</h2>
-
-              <div class="hm-ob-toggle-row is-standalone">
-                <div class="hm-ob-toggle-copy">
-                  <strong>Ativar descoberta</strong>
-                  <span>Desligado, seu perfil não aparece na pilha de ninguém (matches antigos continuam)</span>
+                <div class="hm-ob-ready-card">
+                  <span class="hm-ob-ready-icon"><hm-icon name="sparkles" /></span>
+                  <div>
+                    <strong>Seu Discovery será ativado ao concluir</strong>
+                    <span>Controles avançados como modo global, filtros rígidos e prioridade por atividade continuam disponíveis depois no perfil.</span>
+                  </div>
                 </div>
-                <hm-switch
-                  [checked]="discoverable()"
-                  (checkedChange)="discoverable.set($event)"
-                />
-              </div>
-            </div>
+              </section>
+            }
 
-            <!-- BOTÃO -->
-            <button
-              type="submit"
-              class="hm-ob-submit"
-              [disabled]="onboardingForm().invalid() || onboardingForm().submitting()"
-            >
-              @if (onboardingForm().submitting()) {
-                <hm-icon name="refresh-cw" class="animate-spin" />
-                Salvando...
+            <div class="hm-ob-actions">
+              @if (currentStep() > 1) {
+                <button type="button" class="hm-ob-back" (click)="previousStep()">
+                  <hm-icon name="arrow-left" />
+                  Voltar
+                </button>
               } @else {
-                Salvar e começar
-                <hm-icon name="sparkles" />
+                <span></span>
               }
-            </button>
+
+              @if (currentStep() < steps.length) {
+                <button type="button" class="hm-ob-next" (click)="nextStep()">
+                  Continuar
+                  <hm-icon name="arrow-right" />
+                </button>
+              } @else {
+                <button type="submit" class="hm-ob-submit" [disabled]="onboardingForm().submitting()">
+                  @if (onboardingForm().submitting()) {
+                    <hm-icon name="refresh-cw" class="animate-spin" />
+                    Salvando...
+                  } @else {
+                    Salvar e começar
+                    <hm-icon name="sparkles" />
+                  }
+                </button>
+              }
+            </div>
           </form>
         </div>
       </div>
@@ -456,6 +464,15 @@ export class OnboardingPage implements OnInit {
   protected readonly BODY_TYPE_OPTIONS = BODY_TYPE_OPTIONS;
   protected readonly GENDER_INTEREST_OPTIONS = GENDER_INTEREST_OPTIONS;
   protected readonly interestGroups = ONBOARDING_INTEREST_GROUPS;
+  protected readonly steps = [
+    { id: 1, title: 'Sobre você', caption: 'Identidade e localização', description: 'Primeiro, precisamos do mínimo necessário para saber quem é você e de onde parte a descoberta.' },
+    { id: 2, title: 'Quem você procura', caption: 'Preferências de descoberta', description: 'Agora definimos os sinais que mais influenciam quais pessoas entram e sobem no seu Discovery.' },
+    { id: 3, title: 'Afinidades', caption: 'Interesses e contexto', description: 'Por fim, adicionamos sinais de compatibilidade para ordenar melhor os perfis e melhorar a qualidade das conexões.' },
+  ] as const;
+
+  readonly currentStep = signal(1);
+  readonly currentStepMeta = computed(() => this.steps[this.currentStep() - 1] ?? this.steps[0]);
+  readonly geoStatus = signal<'idle' | 'loading' | 'ready' | 'denied' | 'unavailable'>('idle');
 
   readonly error = signal('');
   readonly states = signal<BrazilianStateView[]>([]);
@@ -501,6 +518,8 @@ export class OnboardingPage implements OnInit {
     minLength(p.displayName, 2, { message: 'Nome muito curto' });
     required(p.birthDate, { message: 'Informe sua data de nascimento' });
     required(p.gender, { message: 'Selecione um gênero' });
+    required(p.state, { message: 'Informe seu estado' });
+    minLength(p.state, 2, { message: 'Estado inválido' });
     required(p.city, { message: 'Informe sua cidade' });
     minLength(p.city, 2, { message: 'Cidade muito curta' });
   });
@@ -509,6 +528,65 @@ export class OnboardingPage implements OnInit {
     const next = new Set(this.lookingForSet());
     next.has(gender) ? next.delete(gender) : next.add(gender);
     this.lookingForSet.set(next);
+  }
+
+  nextStep(): void {
+    this.commitDraft();
+    this.error.set('');
+
+    if (this.currentStep() === 1) {
+      const current = this.model();
+      if (!current.displayName.trim() || current.displayName.trim().length < 2 || !current.birthDate || !current.gender || !current.state.trim() || !current.city.trim()) {
+        this.error.set('Preencha nome, data de nascimento, gênero, estado e cidade para continuar.');
+        return;
+      }
+      if (!this.isAdult(current.birthDate)) {
+        this.error.set('O Himeros é exclusivo para maiores de 18 anos. Confira sua data de nascimento.');
+        return;
+      }
+      if (!this.locationSelectionValid()) {
+        this.error.set('Escolha um estado brasileiro e, quando houver sugestões, uma cidade da lista.');
+        return;
+      }
+    }
+
+    if (this.currentStep() === 2 && this.lookingForSet().size === 0) {
+      this.error.set('Selecione pelo menos uma opção em “Tenho interesse em” para configurar seu Discovery.');
+      return;
+    }
+
+    this.currentStep.update(step => Math.min(this.steps.length, step + 1));
+    this.scrollToTop();
+  }
+
+  previousStep(): void {
+    this.error.set('');
+    this.currentStep.update(step => Math.max(1, step - 1));
+    this.scrollToTop();
+  }
+
+  hasPreciseLocation(): boolean {
+    const current = this.model();
+    return current.latitude !== null && current.longitude !== null;
+  }
+
+  requestPreciseLocation(): void {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      this.geoStatus.set('unavailable');
+      return;
+    }
+
+    this.geoStatus.set('loading');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        this.model.update(model => ({ ...model, latitude: coords.latitude, longitude: coords.longitude }));
+        this.geoStatus.set('ready');
+      },
+      (locationError) => {
+        this.geoStatus.set(locationError.code === locationError.PERMISSION_DENIED ? 'denied' : 'unavailable');
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    );
   }
 
   setBodyType(value: BodyType | null): void {
@@ -535,6 +613,7 @@ export class OnboardingPage implements OnInit {
 
   onStateInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
+    if (this.hasPreciseLocation()) this.geoStatus.set('idle');
     const previous = this.model().state;
     const state = this.states().find((item: BrazilianStateView) =>
       this.normalize(item.name) === this.normalize(value) || this.normalize(item.code) === this.normalize(value));
@@ -555,6 +634,7 @@ export class OnboardingPage implements OnInit {
 
   onCityInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
+    if (this.hasPreciseLocation()) this.geoStatus.set('idle');
     this.model.update((model: OnboardingFormModel) => ({ ...model, city: value, latitude: null, longitude: null }));
   }
 
@@ -626,15 +706,42 @@ export class OnboardingPage implements OnInit {
     return true;
   }
 
+  private isAdult(rawBirthDate: string): boolean {
+    if (!rawBirthDate) return false;
+    const birth = new Date(`${rawBirthDate}T00:00:00`);
+    if (Number.isNaN(birth.getTime())) return false;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDelta = today.getMonth() - birth.getMonth();
+    if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birth.getDate())) age--;
+    return age >= 18;
+  }
+
+  private scrollToTop(): void {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   onSubmit(event: Event): void {
     event.preventDefault();
     this.commitDraft();
 
+    if (!this.isAdult(this.model().birthDate)) {
+      this.currentStep.set(1);
+      this.error.set('O Himeros é exclusivo para maiores de 18 anos. Confira sua data de nascimento.');
+      return;
+    }
     if (this.lookingForSet().size === 0) {
-      this.error.set('Selecione pelo menos uma opção em “Interessado em” para configurar seu Discovery.');
+      this.currentStep.set(2);
+      this.error.set('Selecione pelo menos uma opção em “Tenho interesse em” para configurar seu Discovery.');
+      return;
+    }
+    if (this.interests().length < 3) {
+      this.currentStep.set(3);
+      this.error.set('Escolha pelo menos 3 interesses para dar sinais mínimos de afinidade ao motor de matching.');
       return;
     }
     if (!this.locationSelectionValid()) {
+      this.currentStep.set(1);
       this.error.set('Escolha um estado brasileiro e, quando houver sugestões, uma cidade da lista.');
       return;
     }

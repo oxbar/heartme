@@ -1,1 +1,43 @@
-package com.himeros.billing;import com.himeros.shared.outbox.OutboxService;import java.math.*;import java.time.*;import java.util.*;import org.springframework.context.ApplicationEventPublisher;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;@Service public class BillingService{private final PaymentRepository repo;private final ApplicationEventPublisher events;private final OutboxService outbox;public BillingService(PaymentRepository r,ApplicationEventPublisher e,OutboxService o){repo=r;events=e;outbox=o;}@Transactional public PaymentView purchase(UUID user,String plan){String p=plan.toUpperCase();BigDecimal amount=switch(p){case"MONTHLY"->new BigDecimal("29.90");case"QUARTERLY"->new BigDecimal("79.90");case"YEARLY"->new BigDecimal("249.90");default->throw new IllegalArgumentException("Unknown plan");};Payment payment=repo.save(new Payment(user,p,amount));PaymentCaptured event=new PaymentCaptured(payment.id(),user,p,amount,"BRL",Instant.now());events.publishEvent(event);outbox.append("Payment",payment.id(),"himeros.billing.payment-captured.v1","himeros.billing.events.v1",payment.id(),event);return new PaymentView(payment.id(),p,amount,"BRL",payment.status().name(),payment.created());}public record PaymentView(UUID id,String plan,BigDecimal amount,String currency,String status,Instant createdAt){}}
+package com.himeros.billing;
+
+import com.himeros.shared.outbox.OutboxService;
+import java.math.*;
+import java.time.*;
+import java.util.*;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class BillingService {
+    private final PaymentRepository repo;
+    private final ApplicationEventPublisher events;
+    private final OutboxService outbox;
+
+    public BillingService(PaymentRepository r, ApplicationEventPublisher e, OutboxService o) {
+        repo = r;
+        events = e;
+        outbox = o;
+    }
+
+    @Transactional
+    public PaymentView purchase(UUID user, String plan) {
+        String p = plan.toUpperCase();
+        BigDecimal amount = switch (p) {
+            case "MONTHLY" -> new BigDecimal("29.90");
+            case "QUARTERLY" -> new BigDecimal("79.90");
+            case "YEARLY" -> new BigDecimal("249.90");
+            default -> throw new IllegalArgumentException("Unknown plan");
+        };
+        Payment payment = repo.save(new Payment(user, p, amount));
+        PaymentCaptured event = new PaymentCaptured(payment.id(), user, p, amount, "BRL", Instant.now());
+        events.publishEvent(event);
+        outbox.append("Payment", payment.id(), "himeros.billing.payment-captured.v1", "himeros.billing.events.v1",
+                payment.id(), event);
+        return new PaymentView(payment.id(), p, amount, "BRL", payment.status().name(), payment.created());
+    }
+
+    public record PaymentView(UUID id, String plan, BigDecimal amount, String currency, String status,
+            Instant createdAt) {
+    }
+}
