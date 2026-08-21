@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { filter, firstValueFrom } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { ConversationView, MatchView, PhotoView, PresenceView, PublicProfileView } from '../core/api/contracts';
+import type { ConversationView, MatchView, MessageView, PhotoView, PresenceView, PublicProfileView } from '../core/api/contracts';
+import { MessagingApi } from '../core/api/messaging.api';
 import { ProfileApi } from '../core/api/profile.api';
 import { MediaApi } from '../core/api/media.api';
 import { SessionStore } from '../core/auth/session.store';
@@ -11,6 +12,17 @@ import { ProfileStore } from '../core/state/profile.store';
 import { SocialStateStore } from '../core/state/social-state.store';
 import { AvatarComponent } from '../shared/avatar.component';
 import { IconComponent } from '../ui/icon/icon.component';
+
+const SIDEBAR_READ_KEY = 'hm.conversations.readAt.v1';
+
+function loadSidebarReadMap(): Record<string, string> {
+  try {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SIDEBAR_READ_KEY) : null;
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 @Component({
   selector: 'hm-app-sidebar',
@@ -135,22 +147,70 @@ import { IconComponent } from '../ui/icon/icon.component';
                 <span>Seus matches continuam acima e aparecerão aqui quando houver conversa.</span>
               </div>
             } @else {
-              <div class="hm-conversation-list">
+              <div class="hm-conversation-list hm-conversation-list-enhanced">
                 @for (conversation of conversations(); track conversation.id) {
-                  <a [routerLink]="['/app/messages', conversation.id]" routerLinkActive="is-selected" class="hm-conversation-row">
+                  @let otherId = otherUser(conversation);
+                  @let last = lastSnippet(conversation.id);
+                  @let unread = unreadCount(conversation);
+                  <a
+                    [routerLink]="['/app/messages', conversation.id]"
+                    routerLinkActive="is-selected"
+                    class="hm-conversation-row hm-conversation-row-enhanced"
+                    [class.has-unread]="unread > 0"
+                  >
                     <div class="relative shrink-0">
                       <hm-avatar
-                        [src]="photoFor(otherUser(conversation))"
-                        [name]="profileFor(otherUser(conversation))?.displayName || 'Match'"
+                        [src]="photoFor(otherId)"
+                        [name]="profileFor(otherId)?.displayName || 'Match'"
                         [size]="58"
                       />
-                      @if (presenceFor(otherUser(conversation))?.online) {
+                      @if (presenceFor(otherId)?.online) {
                         <span class="hm-online-dot" aria-label="Online"></span>
                       }
                     </div>
                     <div class="min-w-0 flex-1">
-                      <strong class="truncate">{{ profileFor(otherUser(conversation))?.displayName || 'Match' }}</strong>
-                      <span class="truncate">{{ presenceFor(otherUser(conversation))?.online ? 'Online agora' : 'Vocês deram match — toque para conversar' }}</span>
+                      <div class="flex items-baseline justify-between gap-3">
+                        <strong
+                          class="truncate"
+                          [class.text-white]="unread > 0"
+                          [class.font-black]="unread > 0"
+                        >
+                          {{ profileFor(otherId)?.displayName || 'Match' }}
+                        </strong>
+                        <span
+                          class="shrink-0 text-[11px]"
+                          [class.text-hm-primary]="unread > 0"
+                          [class.font-semibold]="unread > 0"
+                          [class.text-white/38]="unread === 0"
+                        >
+                          {{ formatTime(conversation.lastMessageAt) }}
+                        </span>
+                      </div>
+                      <div class="mt-1.5 flex items-center gap-2">
+                        <span
+                          class="min-w-0 flex-1 truncate text-[12.5px] leading-snug"
+                          [class.text-white/72]="unread === 0"
+                          [class.text-white/90]="unread > 0"
+                        >
+                          @if (last) {
+                            {{ last.isMine ? 'Você: ' : '' }}{{ last.content }}
+                          } @else {
+                            <span
+                              class="italic"
+                              [class.text-white/45]="unread === 0"
+                              [class.text-white/65]="unread > 0"
+                            >{{ presenceFor(otherId)?.online ? 'Online agora · toque para conversar' : 'Toque para iniciar a conversa' }}</span>
+                          }
+                        </span>
+                        @if (unread > 0) {
+                          <span
+                            class="hm-unread-badge inline-flex h-[19px] min-w-[19px] shrink-0 items-center justify-center rounded-full px-1.5 text-[10.5px] font-black text-[hsl(var(--primary-foreground))]"
+                            [attr.aria-label]="unread + ' mensagens não lidas'"
+                          >
+                            {{ unread > 9 ? '9+' : unread }}
+                          </span>
+                        }
+                      </div>
                     </div>
                   </a>
                 }
@@ -184,6 +244,7 @@ import { IconComponent } from '../ui/icon/icon.component';
 })
 export class AppSidebarComponent {
   private readonly social = inject(SocialStateStore);
+  private readonly messagingApi = inject(MessagingApi);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
   private readonly session = inject(SessionStore);
@@ -200,6 +261,8 @@ export class AppSidebarComponent {
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
+  readonly lastMessages = signal<Record<string, MessageView>>({});
+  readonly readAtMap = signal<Record<string, string>>(loadSidebarReadMap());
   readonly ownPhoto = signal<string | null>(null);
   private presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
   private enrichmentLoadInFlight: Promise<void> | null = null;
@@ -224,8 +287,6 @@ export class AppSidebarComponent {
       .subscribe(event => {
         this.activeUrl.set(event.urlAfterRedirects);
         if (event.urlAfterRedirects.startsWith('/app/matches') || event.urlAfterRedirects.startsWith('/app/messages')) {
-          // Route changes must not trigger a second destructive social refresh.
-          // The page owns its refresh; the sidebar only re-enriches the shared state.
           void this.load(false);
         }
       });
@@ -268,6 +329,32 @@ export class AppSidebarComponent {
     return conversation ? ['/app/messages', conversation.id] : ['/app/profiles', this.otherUser(match)];
   }
 
+  lastSnippet(conversationId: string): { content: string; isMine: boolean } | null {
+    const msg = this.lastMessages()[conversationId];
+    if (!msg) return null;
+    const content = msg.content.length > 56 ? msg.content.slice(0, 56) + '…' : msg.content;
+    return { content, isMine: msg.senderId === this.session.userId() };
+  }
+
+  unreadCount(conversation: ConversationView): number {
+    const lastMsg = this.lastMessages()[conversation.id];
+    if (!lastMsg || lastMsg.senderId === this.session.userId()) return 0;
+    const readAt = this.readAtMap()[conversation.id];
+    if (!readAt) return 1;
+    return new Date(lastMsg.sentAt).getTime() > new Date(readAt).getTime() ? 1 : 0;
+  }
+
+  formatTime(value: string | null | undefined): string {
+    if (!value) return '';
+    const d = new Date(value);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+    if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+  }
+
   private load(refreshSocial: boolean): Promise<void> {
     if (this.enrichmentLoadInFlight) return this.enrichmentLoadInFlight;
     this.enrichmentLoadInFlight = this.performLoad(refreshSocial).finally(() => {
@@ -283,8 +370,6 @@ export class AppSidebarComponent {
         value => ({ ok: true as const, value }),
         () => ({ ok: false as const })
       ),
-      // Do one network refresh on shell startup. During Matches <-> Messages
-      // navigation, reuse the root store instead of issuing a competing request.
       refreshSocial
         ? this.social.refresh({ preserveKnown: true, retryEmpty: true })
         : this.social.ensureLoaded()
@@ -301,19 +386,20 @@ export class AppSidebarComponent {
       ...conversations.map(conversation => this.otherUser(conversation))
     ].filter(Boolean)));
 
-    const profilePairs = await Promise.all(userIds.map(async userId => {
-      try {
-        return [userId, await firstValueFrom(this.profileApi.byUser(userId))] as const;
-      } catch {
-        return null;
-      }
-    }));
+    const [profilePairs, lastMessagesResult] = await Promise.all([
+      Promise.all(userIds.map(async userId => {
+        try { return [userId, await firstValueFrom(this.profileApi.byUser(userId))] as const; }
+        catch { return null; }
+      })),
+      this.loadSidebarLastMessages(conversations)
+    ]);
 
     const profileMap: Record<string, PublicProfileView> = { ...this.profiles() };
     for (const pair of profilePairs) {
       if (pair) profileMap[pair[0]] = pair[1];
     }
     this.profiles.set(profileMap);
+    this.lastMessages.update(prev => ({ ...prev, ...lastMessagesResult }));
 
     if (userIds.length) {
       const [photos, presencePairs] = await Promise.all([
@@ -327,6 +413,26 @@ export class AppSidebarComponent {
       const presenceMap: Record<string, PresenceView> = { ...this.presences() };
       for (const pair of presencePairs) if (pair) presenceMap[pair[0]] = pair[1];
       this.presences.set(presenceMap);
+    }
+  }
+
+  private async loadSidebarLastMessages(list: ConversationView[]): Promise<Record<string, MessageView>> {
+    if (!list.length) return {};
+    try {
+      const pairs = await Promise.all(list.map(async c => {
+        try {
+          const msgs = await firstValueFrom(this.messagingApi.messages(c.id, undefined, 30));
+          const last = msgs.length ? msgs[msgs.length - 1] : null;
+          return last ? [c.id, last] as const : null;
+        } catch {
+          return null;
+        }
+      }));
+      const byId: Record<string, MessageView> = {};
+      for (const p of pairs) if (p) byId[p[0]] = p[1];
+      return byId;
+    } catch {
+      return {};
     }
   }
 

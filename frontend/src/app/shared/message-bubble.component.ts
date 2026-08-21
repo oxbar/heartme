@@ -8,9 +8,9 @@ import { IconComponent } from '../ui/icon/icon.component';
   imports: [IconComponent],
   standalone: true,
   template: `
-    <div class="hm-message-row" [class.is-mine]="isMine()">
-      <div class="hm-message-cluster">
-        <div class="hm-message-bubble" [class.is-mine]="isMine()">
+    <div class="hm-message-row" [class.is-mine]="isMine()" [class.is-new]="isNew() && !isMine()">
+      <div class="hm-message-cluster" [class.has-pulse]="isNew() && !isMine()">
+        <div class="hm-message-bubble" [class.is-mine]="isMine()" [class.is-new]="isNew() && !isMine()">
           @if (message(); as currentMessage) {
             <p class="hm-message-content">{{ currentMessage.content }}</p>
             <div class="hm-message-meta">
@@ -49,6 +49,7 @@ import { IconComponent } from '../ui/icon/icon.component';
 export class MessageBubbleComponent {
   private readonly session = inject(SessionStore);
   readonly message = input<MessageView | null>(null);
+  readonly isNew = input(false);
   readonly toggleHeart = output<string>();
 
   readonly isMine = computed(() => this.message()?.senderId === this.session.userId());

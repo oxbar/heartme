@@ -3491,6 +3491,198 @@
   .hm-message-heart:hover { background: hsl(0 0% 100% / .05); color: hsl(0 0% 100% / .72); transform: scale(1.04); }
   .hm-message-heart.is-active { border-color: hsl(346 88% 60% / .24); background: hsl(346 88% 60% / .10); color: hsl(346 88% 65%); }
 
+  /* ============================================================
+     Conversations list — improved spacing & unread indicators
+     ============================================================ */
+  .hm-conversations-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--dating-border)) transparent;
+  }
+  .hm-conversations-scroll::-webkit-scrollbar { width: 10px; }
+  .hm-conversations-scroll::-webkit-scrollbar-track { background: transparent; }
+  .hm-conversations-scroll::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 100% / 0.06);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .hm-conversations-scroll::-webkit-scrollbar-thumb:hover { background: hsl(0 0% 100% / 0.11); background-clip: padding-box; border: 3px solid transparent; }
+
+  .border-hm-primary\/30 { border-color: hsl(var(--primary) / 0.30) !important; }
+  .text-hm-primary { color: hsl(var(--primary)) !important; }
+
+  .hm-unread-badge {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.28),
+      0 4px 12px hsl(var(--primary) / 0.28);
+    animation: hm-unread-pop 260ms cubic-bezier(.2,.9,.3,1.3) both;
+  }
+
+  .hm-message-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 0 10px;
+  }
+
+  .hm-chat-messages {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--dating-border)) transparent;
+  }
+  .hm-chat-messages::-webkit-scrollbar { width: 10px; }
+  .hm-chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .hm-chat-messages::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 100% / 0.06);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .hm-chat-messages::-webkit-scrollbar-thumb:hover { background: hsl(0 0% 100% / 0.12); background-clip: padding-box; border: 3px solid transparent; }
+
+  /* New incoming message highlight + subtle pulse overlay */
+  .hm-message-bubble.is-new {
+    position: relative;
+    animation: hm-message-new-in 320ms cubic-bezier(.2,.85,.25,1.05) both,
+               hm-message-glow 2200ms ease-out 100ms both;
+    border-color: hsl(var(--primary) / 0.55) !important;
+  }
+  .hm-message-bubble.is-new::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.18);
+    animation: hm-ring-pulse 2200ms ease-out 100ms both;
+  }
+  .hm-message-row.is-new {
+    animation: hm-message-slide-in 280ms cubic-bezier(.2,.9,.25,1.05) both;
+  }
+  .hm-message-cluster.has-pulse {
+    animation: hm-subtle-bounce 360ms ease-out both;
+  }
+
+  /* Floating "new messages" banner when scrolled up */
+  .hm-new-messages-banner {
+    position: absolute;
+    left: 50%;
+    bottom: 88px;
+    z-index: 40;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transform: translateX(-50%);
+    min-height: 38px;
+    padding: 0 14px 0 12px;
+    border: 1px solid hsl(var(--primary) / 0.34);
+    border-radius: 999px;
+    background: hsl(0 0% 10% / 0.92);
+    color: hsl(var(--primary));
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow:
+      0 10px 26px hsl(0 0% 0% / 0.42),
+      0 0 0 1px hsl(var(--primary) / 0.06) inset;
+    backdrop-filter: blur(10px);
+    transition: transform 140ms ease, background 140ms ease;
+    animation: hm-banner-in 220ms ease-out both;
+  }
+  .hm-new-messages-banner:hover {
+    background: hsl(var(--primary) / 0.12);
+    transform: translateX(-50%) translateY(-1px);
+  }
+  .hm-new-messages-banner:active { transform: translateX(-50%) translateY(0); }
+  .hm-chat-column { position: relative; }
+
+  /* Improved chat header spacing */
+  .hm-chat-header {
+    gap: 14px;
+    padding: 0 22px;
+    background: linear-gradient(180deg, hsl(0 0% 7.5%), hsl(var(--dating-panel)));
+  }
+  .hm-chat-header h2 {
+    font-size: 18px;
+    letter-spacing: -0.02em;
+  }
+  .hm-chat-header p {
+    margin-top: 3px;
+    font-size: 12px;
+  }
+
+  /* Compose area improvements */
+  .hm-chat-compose {
+    min-height: 78px;
+    padding: 12px 18px 14px;
+    gap: 12px;
+    background: linear-gradient(0deg, hsl(0 0% 7.5%), hsl(var(--dating-panel)));
+  }
+  .hm-chat-compose-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .hm-chat-compose input {
+    height: 48px;
+    padding: 0 18px;
+    font-size: 14.5px;
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  }
+  .hm-chat-compose input:hover { background: hsl(0 0% 4.5%); }
+  .hm-chat-compose input:focus {
+    background: hsl(0 0% 4%);
+    box-shadow: 0 0 0 4px hsl(var(--primary) / 0.10);
+  }
+  .hm-chat-send {
+    width: 48px;
+    height: 48px;
+    transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, hsl(var(--primary)) 78%, #fff),
+      0 8px 20px hsl(var(--primary) / 0.22);
+  }
+  .hm-chat-send:hover:not(:disabled) { transform: translateY(-1px); background: hsl(38 84% 48%); }
+  .hm-chat-send:active:not(:disabled) { transform: translateY(0); }
+
+  @keyframes hm-unread-pop {
+    0% { transform: scale(0.5); opacity: 0; }
+    70% { transform: scale(1.12); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes hm-message-new-in {
+    0% { opacity: 0; filter: brightness(0.85); }
+    100% { opacity: 1; filter: brightness(1); }
+  }
+  @keyframes hm-message-glow {
+    0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.0), 0 7px 18px hsl(0 0% 0% / .12); }
+    18%  { box-shadow: 0 0 0 6px hsl(var(--primary) / 0.08), 0 10px 24px hsl(var(--primary) / 0.12); }
+    100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.0), 0 7px 18px hsl(0 0% 0% / .12); }
+  }
+  @keyframes hm-ring-pulse {
+    0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.24); }
+    40%  { box-shadow: 0 0 0 10px hsl(var(--primary) / 0.04); }
+    100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+  }
+  @keyframes hm-message-slide-in {
+    0%   { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes hm-subtle-bounce {
+    0%   { transform: translateY(0); }
+    45%  { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
+  }
+  @keyframes hm-banner-in {
+    from { opacity: 0; transform: translate(-50%, 6px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+
   .hm-presence-badge {
     margin-left: auto;
     border-radius: 999px;

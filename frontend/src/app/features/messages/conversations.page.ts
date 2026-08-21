@@ -1,13 +1,33 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
+import type { ConversationView, MessageView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
+import { MessagingApi } from '../../core/api/messaging.api';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { SessionStore } from '../../core/auth/session.store';
 import { SocialStateStore } from '../../core/state/social-state.store';
 import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
+
+const READ_KEY = 'hm.conversations.readAt.v1';
+
+function loadReadMap(): Record<string, string> {
+  try {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(READ_KEY) : null;
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveReadMap(map: Record<string, string>): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(READ_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
 
 @Component({
   imports: [RouterLink, AvatarComponent, IconComponent],
@@ -22,11 +42,11 @@ import { IconComponent } from '../../ui/icon/icon.component';
         </div>
       </div>
 
-      <div class="h-full overflow-y-auto p-3 pb-24 lg:hidden">
-        <header class="mb-4 flex items-center justify-between px-1 pt-2">
+      <div class="h-full overflow-y-auto p-4 pb-28 lg:hidden hm-conversations-scroll">
+        <header class="mb-5 flex items-center justify-between px-1 pt-1">
           <div>
-            <h1 class="text-2xl font-black text-white">Mensagens</h1>
-            <p class="mt-1 text-xs text-white/50">Converse com seus matches.</p>
+            <h1 class="text-[28px] font-black tracking-tight text-white">Mensagens</h1>
+            <p class="mt-1.5 text-xs text-white/50">Converse com seus matches.</p>
           </div>
           <button type="button" class="hm-mobile-icon-button" aria-label="Atualizar conversas" (click)="load()">
             <hm-icon name="refresh-ccw" size="18" [class]="enriching() ? 'animate-spin' : ''" />
@@ -34,9 +54,9 @@ import { IconComponent } from '../../ui/icon/icon.component';
         </header>
 
         @if (showSkeleton()) {
-          <div class="space-y-2">
+          <div class="space-y-3">
             @for (_ of [0,1,2,3,4,5]; track _) {
-              <div class="h-[76px] animate-pulse rounded-xl bg-white/5"></div>
+              <div class="h-[92px] animate-pulse rounded-2xl bg-white/[0.06]"></div>
             }
           </div>
         } @else if (error()) {
@@ -54,24 +74,64 @@ import { IconComponent } from '../../ui/icon/icon.component';
             <a routerLink="/app/discover" class="hm-dark-button is-primary">Descobrir pessoas</a>
           </div>
         } @else {
-          <div class="space-y-1">
+          <div class="space-y-2">
             @for (conversation of conversations(); track conversation.id) {
               @let userId = otherUser(conversation);
+              @let last = lastSnippet(conversation.id);
+              @let ts = conversation.lastMessageAt;
+              @let unread = unreadCount(conversation);
               <a
                 [routerLink]="['/app/messages', conversation.id]"
-                class="flex min-h-[78px] items-center gap-3 rounded-xl px-3 text-white no-underline transition hover:bg-white/[0.07]"
+                class="group flex min-h-[92px] items-center gap-4 rounded-2xl border border-transparent px-4 py-3 text-white no-underline transition hover:border-white/[0.06] hover:bg-white/[0.05]"
+                [class.border-hm-primary/30]="unread > 0"
+                [class.bg-white/[0.035]]="unread > 0"
               >
                 <div class="relative shrink-0">
-                  <hm-avatar [src]="firstPhoto(userId)" [name]="profileFor(userId)?.displayName || 'Match'" [size]="56" />
+                  <hm-avatar [src]="firstPhoto(userId)" [name]="profileFor(userId)?.displayName || 'Match'" [size]="60" />
                   @if (presenceFor(userId)?.online) { <span class="hm-online-dot"></span> }
                 </div>
                 <div class="min-w-0 flex-1">
-                  <strong class="block truncate text-[15px]">{{ profileFor(userId)?.displayName || 'Match' }}</strong>
-                  <span class="mt-1 block truncate text-xs" [class.text-emerald-400]="presenceFor(userId)?.online" [class.text-white/45]="!presenceFor(userId)?.online">
-                    {{ presenceFor(userId)?.online ? 'Online agora' : 'Toque para abrir a conversa' }}
-                  </span>
+                  <div class="flex items-baseline justify-between gap-3">
+                    <strong
+                      class="block truncate text-[16px]"
+                      [class.text-white]="unread > 0"
+                      [class.font-black]="unread > 0"
+                      [class.text-white/90]="unread === 0"
+                      [class.font-extrabold]="unread === 0"
+                    >
+                      {{ profileFor(userId)?.displayName || 'Match' }}
+                    </strong>
+                    <span
+                      class="shrink-0 text-[11px]"
+                      [class.text-hm-primary]="unread > 0"
+                      [class.font-semibold]="unread > 0"
+                      [class.text-white/38]="unread === 0"
+                    >
+                      {{ formatTime(ts) }}
+                    </span>
+                  </div>
+                  <div class="mt-1.5 flex items-center gap-2">
+                    <span
+                      class="min-w-0 flex-1 truncate text-[13px] leading-snug"
+                      [class.text-white/78]="unread === 0"
+                      [class.text-white/92]="unread > 0"
+                    >
+                      @if (last) {
+                        {{ last.isMine ? 'Você: ' : '' }}{{ last.content }}
+                      } @else {
+                        <span class="italic" [class.text-white/45]="unread === 0" [class.text-white/65]="unread > 0">{{ presenceFor(userId)?.online ? 'Online agora · toque para conversar' : 'Toque para iniciar a conversa' }}</span>
+                      }
+                    </span>
+                    @if (unread > 0) {
+                      <span
+                        class="inline-flex h-[20px] min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-black text-[hsl(var(--primary-foreground))] hm-unread-badge"
+                        [attr.aria-label]="unread + ' mensagens não lidas'"
+                      >
+                        {{ unread > 9 ? '9+' : unread }}
+                      </span>
+                    }
+                  </div>
                 </div>
-                <hm-icon name="arrow-right" size="18" class="text-white/30" />
               </a>
             }
           </div>
@@ -85,6 +145,7 @@ export class ConversationsPage implements OnInit {
   private readonly social = inject(SocialStateStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
+  private readonly messagingApi = inject(MessagingApi);
   private readonly session = inject(SessionStore);
 
   readonly enriching = signal(false);
@@ -94,6 +155,9 @@ export class ConversationsPage implements OnInit {
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
+  readonly lastMessages = signal<Record<string, MessageView>>({});
+  readonly unreadByConversation = signal<Record<string, number>>({});
+  readonly readAtMap = signal<Record<string, string>>(loadReadMap());
 
   readonly showSkeleton = computed(() =>
     this.conversations().length === 0 && (!this.social.loaded() || this.socialLoading())
@@ -103,6 +167,7 @@ export class ConversationsPage implements OnInit {
     const convosInit = this.conversations();
     if (convosInit.length > 0) {
       void this.enrich(convosInit);
+      void this.loadLastMessages(convosInit);
     }
     await this.load();
   }
@@ -123,6 +188,38 @@ export class ConversationsPage implements OnInit {
     return this.presences()[userId] ?? null;
   }
 
+  lastSnippet(conversationId: string): { content: string; isMine: boolean } | null {
+    const msg = this.lastMessages()[conversationId];
+    if (!msg) return null;
+    const content = msg.content.length > 60 ? msg.content.slice(0, 60) + '…' : msg.content;
+    return { content, isMine: msg.senderId === this.session.userId() };
+  }
+
+  unreadCount(conversation: ConversationView): number {
+    const lastMsg = this.lastMessages()[conversation.id];
+    if (!lastMsg || lastMsg.senderId === this.session.userId()) return 0;
+    const readAt = this.readAtMap()[conversation.id];
+    if (!readAt) {
+      return 1;
+    }
+    return new Date(lastMsg.sentAt).getTime() > new Date(readAt).getTime() ? 1 : 0;
+  }
+
+  formatTime(value: string | null | undefined): string {
+    if (!value) return '';
+    const d = new Date(value);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+    if (diffDays < 7) {
+      return d.toLocaleDateString([], { weekday: 'short' });
+    }
+    return d.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+  }
+
   async load(): Promise<void> {
     this.error.set('');
     try {
@@ -132,9 +229,30 @@ export class ConversationsPage implements OnInit {
         return;
       }
       const list = this.conversations();
-      await this.enrich(list);
+      await Promise.all([this.enrich(list), this.loadLastMessages(list)]);
     } catch {
       this.error.set('Tente novamente em alguns instantes.');
+    }
+  }
+
+  private async loadLastMessages(list: ConversationView[]): Promise<void> {
+    if (!list.length) return;
+    try {
+      const pairs = await Promise.all(list.map(async c => {
+        try {
+          const msgs = await firstValueFrom(this.messagingApi.messages(c.id, undefined, 30));
+          const last = msgs.length ? msgs[msgs.length - 1] : null;
+          return last ? [c.id, last] as const : null;
+        } catch {
+          return null;
+        }
+      }));
+      const byId: Record<string, MessageView> = {};
+      for (const p of pairs) if (p) byId[p[0]] = p[1];
+      this.lastMessages.update(prev => ({ ...prev, ...byId }));
+      saveReadMap(this.readAtMap());
+    } catch {
+      // ignore
     }
   }
 

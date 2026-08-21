@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, ViewChild, afterNextRender, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, ViewChild, afterNextRender, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
@@ -14,6 +14,20 @@ import { MessageBubbleComponent } from '../../shared/message-bubble.component';
 import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.component';
+
+const READ_KEY = 'hm.conversations.readAt.v1';
+
+function updateLocalRead(conversationId: string): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const raw = sessionStorage.getItem(READ_KEY);
+    const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+    map[conversationId] = new Date().toISOString();
+    sessionStorage.setItem(READ_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
 
 @Component({
   imports: [FormsModule, RouterLink, MessageBubbleComponent, AvatarComponent, IconComponent, PhotoCarouselComponent],
@@ -70,14 +84,30 @@ import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.c
                 <span>Uma mensagem simples e personalizada costuma ser um ótimo começo.</span>
               </div>
             } @else {
-              <div class="space-y-2.5">
+              <div class="hm-message-stack">
                 @for (message of messages(); track message.id) {
-                  <hm-message-bubble [message]="message" (toggleHeart)="toggleHeart($event)" />
+                  <hm-message-bubble
+                    [message]="message"
+                    [isNew]="justArrived().has(message.id)"
+                    (toggleHeart)="toggleHeart($event)"
+                  />
                 }
               </div>
             }
           </div>
         </div>
+
+        @if (showNewMessageBanner()) {
+          <button
+            type="button"
+            class="hm-new-messages-banner"
+            (click)="scrollToBottom(); dismissNewMessageBanner()"
+            aria-label="Ir para novas mensagens"
+          >
+            <hm-icon name="chevrons-down" size="15" />
+            <span>{{ pendingNewCount() }} nova{{ pendingNewCount() === 1 ? '' : 's' }} mensagem{{ pendingNewCount() === 1 ? '' : 'ns' }}</span>
+          </button>
+        }
 
         <form class="hm-chat-compose" (submit)="sendMessage($event)">
           <div class="hm-chat-compose-inner">
@@ -177,6 +207,11 @@ export class ChatPage implements OnDestroy {
   readonly presence = signal<PresenceView | null>(null);
   readonly otherUserId = signal<string | null>(null);
 
+  readonly justArrived = signal<Set<string>>(new Set());
+  readonly showNewMessageBanner = signal(false);
+  readonly pendingNewCount = signal(0);
+  readonly isAtBottom = signal(true);
+
   readonly presenceLabel = computed(() => {
     const value = this.presence();
     if (!value?.lastSeenAt) return 'Vocês deram match · comece uma conversa';
@@ -192,6 +227,14 @@ export class ChatPage implements OnDestroy {
   private realtimeSubs = new Subscription();
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
 
+  @HostListener('document:visibilitychange')
+  onVisibility(): void {
+    if (!document.hidden && this.id()) {
+      updateLocalRead(this.id());
+      void this.markConversationRead(this.id());
+    }
+  }
+
   constructor() {
     afterNextRender(() => this.scrollToBottom());
     effect(() => {
@@ -201,6 +244,9 @@ export class ChatPage implements OnDestroy {
       this.photos.set([]);
       this.primaryPhoto.set(null);
       this.presence.set(null);
+      this.justArrived.set(new Set());
+      this.showNewMessageBanner.set(false);
+      this.pendingNewCount.set(0);
       void this.load(conversationId);
       this.startRealtime(conversationId);
     });
@@ -211,14 +257,47 @@ export class ChatPage implements OnDestroy {
     if (this.presenceTimer) clearInterval(this.presenceTimer);
   }
 
+  dismissNewMessageBanner(): void {
+    this.showNewMessageBanner.set(false);
+    this.pendingNewCount.set(0);
+  }
+
   private startRealtime(conversationId: string): void {
     this.realtimeSubs.unsubscribe();
     this.realtimeSubs = new Subscription();
     try {
       this.realtimeSubs.add(this.realtime.messages(conversationId).subscribe(message => {
-        this.messages.update(list => list.some(item => item.id === message.id) ? list : [...list, message]);
-        if (message.senderId !== this.session.userId()) void this.markConversationRead(conversationId);
-        this.scrollToBottom();
+        const isNew = !this.messages().some(item => item.id === message.id);
+        const isMine = message.senderId === this.session.userId();
+        if (isNew) {
+          this.messages.update(list => [...list, message]);
+          this.justArrived.update(prev => {
+            const next = new Set(prev);
+            next.add(message.id);
+            return next;
+          });
+          setTimeout(() => {
+            this.justArrived.update(prev => {
+              const next = new Set(prev);
+              next.delete(message.id);
+              return next;
+            });
+          }, 2200);
+
+          if (!isMine) {
+            void this.markConversationRead(conversationId);
+            if (!this.isAtBottom()) {
+              this.pendingNewCount.update(n => n + 1);
+              this.showNewMessageBanner.set(true);
+            } else {
+              this.scrollToBottom();
+            }
+          } else {
+            this.scrollToBottom();
+          }
+        } else {
+          if (!isMine) void this.markConversationRead(conversationId);
+        }
       }));
       this.realtimeSubs.add(this.realtime.receipts(conversationId).subscribe(receipt => {
         if (receipt.readerId === this.session.userId()) return;
@@ -240,10 +319,22 @@ export class ChatPage implements OnDestroy {
     }
   }
 
-  private scrollToBottom(): void {
+  private checkScrollPosition(): void {
+    const el = this.scrollRef?.nativeElement;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    this.isAtBottom.set(distance < 80);
+    if (this.isAtBottom()) this.dismissNewMessageBanner();
+  }
+
+  scrollToBottom(): void {
     setTimeout(() => {
       const element = this.scrollRef?.nativeElement;
-      if (element) element.scrollTop = element.scrollHeight;
+      if (element) {
+        element.scrollTop = element.scrollHeight;
+        this.isAtBottom.set(true);
+        this.dismissNewMessageBanner();
+      }
     }, 30);
   }
 
@@ -276,8 +367,12 @@ export class ChatPage implements OnDestroy {
         this.startPresencePolling(otherId);
       }
 
+      updateLocalRead(conversationId);
       await this.markConversationRead(conversationId);
       this.scrollToBottom();
+
+      const el = this.scrollRef?.nativeElement;
+      if (el) el.addEventListener('scroll', () => this.checkScrollPosition(), { passive: true });
     } catch {
       this.error.set('Verifique sua conexão e tente novamente.');
     } finally {
@@ -297,6 +392,7 @@ export class ChatPage implements OnDestroy {
   }
 
   private async markConversationRead(conversationId: string): Promise<void> {
+    updateLocalRead(conversationId);
     await firstValueFrom(this.messagingApi.markRead(conversationId)).catch(() => undefined);
   }
 
@@ -342,7 +438,8 @@ export class ChatPage implements OnDestroy {
       this.sending.set(true);
       try {
         const message = await firstValueFrom(this.messagingApi.send(conversationId, content));
-        this.messages.update(list => list.some(item => item.id === message.id) ? list : [...list, message]);
+        const isNew = !this.messages().some(item => item.id === message.id);
+        if (isNew) this.messages.update(list => [...list, message]);
         this.inputContent = '';
         this.scrollToBottom();
       } catch {
