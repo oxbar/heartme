@@ -29,7 +29,7 @@ import { IconComponent } from '../ui/icon/icon.component';
             <button
               type="button"
               class="hm-message-heart"
-              [class.is-active]="currentMessage.heartReactedByMe"
+              [class.is-active]="currentMessage.heartReactionCount > 0"
               (click)="toggleHeart.emit(currentMessage.id)"
               [attr.aria-pressed]="currentMessage.heartReactedByMe"
               [attr.aria-label]="currentMessage.heartReactedByMe ? 'Remover coração' : 'Reagir com coração'"

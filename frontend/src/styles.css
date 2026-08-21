@@ -1048,7 +1048,9 @@
     gap: 14px;
     padding: 0 18px;
     border-bottom: 1px solid hsl(var(--dating-border) / 0.75);
-    background: hsl(0 0% 6%);
+    background:
+      radial-gradient(circle at 14% 18%, hsl(var(--primary) / 0.14), transparent 36%),
+      linear-gradient(135deg, hsl(0 0% 8%), hsl(0 0% 5%));
   }
 
   .hm-sidebar-user {
@@ -1349,11 +1351,11 @@
 
   .hm-conversation-row {
     display: flex;
-    min-height: 96px;
+    min-height: 82px;
     align-items: center;
-    gap: 14px;
-    border-left: 4px solid transparent;
-    padding: 14px 16px;
+    gap: 13px;
+    border-right: 3px solid transparent;
+    padding: 10px 14px;
     color: hsl(var(--dating-text));
     text-decoration: none;
     transition: background 150ms ease, border-color 150ms ease;
@@ -1361,8 +1363,13 @@
 
   .hm-conversation-row:hover,
   .hm-conversation-row.is-selected {
-    border-left-color: hsl(var(--primary));
-    background: hsl(var(--dating-panel-raised));
+    border-right-color: hsl(var(--primary));
+    background: hsl(0 0% 10%);
+  }
+
+  .hm-conversation-row.has-unread:not(.is-selected) {
+    border-right-color: hsl(var(--primary) / 0.72);
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.09), transparent 72%);
   }
 
   .hm-conversation-row strong,
@@ -2002,7 +2009,7 @@
     width: 100%;
     height: 100%;
     min-height: 0;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
     background: hsl(var(--dating-canvas));
   }
 
@@ -2090,17 +2097,25 @@
   .hm-chat-profile {
     min-width: 0;
     overflow-y: auto;
-    background: hsl(var(--dating-panel));
+    border-left: 1px solid hsl(var(--dating-border));
+    background: hsl(var(--dating-canvas));
   }
 
   .hm-chat-profile-title {
+    position: sticky;
+    top: 0;
+    z-index: 5;
     display: flex;
     min-height: 78px;
     align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid hsl(var(--dating-border));
     padding: 0 20px;
+    background: hsl(var(--dating-panel) / 0.96);
     color: white;
     font-size: 26px;
     font-weight: 900;
+    backdrop-filter: blur(14px);
   }
 
   .hm-chat-profile-photo {
@@ -2116,11 +2131,12 @@
   }
 
   .hm-chat-profile-section {
-    margin-top: 8px;
-    border-top: 1px solid hsl(var(--dating-border));
-    border-bottom: 1px solid hsl(var(--dating-border));
+    margin: 10px 10px 0;
+    border: 1px solid hsl(0 0% 100% / 0.045);
+    border-radius: 14px;
     padding: 18px 20px;
-    background: hsl(var(--dating-panel-raised));
+    background: hsl(var(--dating-panel));
+    box-shadow: 0 8px 24px hsl(0 0% 0% / 0.10);
   }
 
   .hm-chat-profile-section h3 {
@@ -3444,11 +3460,11 @@
   }
 
   .hm-message-bubble.is-mine {
-    border-color: hsl(var(--primary) / 0.36);
+    border-color: hsl(0 0% 100% / 0.78);
     border-radius: 18px 18px 6px 18px;
-    background: hsl(var(--primary) / 0.14);
-    color: hsl(0 0% 98%);
-    box-shadow: 0 4px 14px hsl(0 0% 0% / 0.18);
+    background: hsl(0 0% 94%);
+    color: hsl(0 0% 8%);
+    box-shadow: 0 4px 14px hsl(0 0% 0% / 0.20);
   }
 
   .hm-message-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
@@ -3464,11 +3480,11 @@
   }
 
   .hm-message-bubble.is-mine .hm-message-meta {
-    color: hsl(0 0% 100% / 0.58);
+    color: hsl(0 0% 12% / 0.58);
   }
 
-  .hm-message-receipt { display: inline-flex; color: hsl(0 0% 100% / .62); }
-  .hm-message-receipt.is-read { color: hsl(var(--primary) / 0.88); }
+  .hm-message-receipt { display: inline-flex; color: currentColor; opacity: .72; }
+  .hm-message-receipt.is-read { color: hsl(205 86% 48%); opacity: 1; }
 
   .hm-message-reaction-bar { display: flex; justify-content: flex-start; min-height: 24px; padding: 3px 4px 0; }
   .hm-message-reaction-bar.is-mine { justify-content: flex-end; }
@@ -3489,7 +3505,13 @@
   }
 
   .hm-message-heart:hover { background: hsl(0 0% 100% / .05); color: hsl(0 0% 100% / .72); transform: scale(1.04); }
-  .hm-message-heart.is-active { border-color: hsl(346 88% 60% / .24); background: hsl(346 88% 60% / .10); color: hsl(346 88% 65%); }
+  .hm-message-heart.is-active {
+    border-color: hsl(356 86% 58% / .30);
+    background: hsl(356 86% 58% / .11);
+    color: hsl(356 86% 61%);
+    box-shadow: 0 4px 14px hsl(356 86% 48% / .12);
+  }
+  .hm-message-heart.is-active svg { fill: currentColor; }
 
   /* ============================================================
      Conversations list — improved spacing & unread indicators
@@ -3518,6 +3540,14 @@
       0 0 0 1px hsl(var(--primary) / 0.28),
       0 4px 12px hsl(var(--primary) / 0.28);
     animation: hm-unread-pop 260ms cubic-bezier(.2,.9,.3,1.3) both;
+  }
+
+  .hm-unread-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    min-width: 9px;
+    padding: 0;
   }
 
   .hm-message-stack {

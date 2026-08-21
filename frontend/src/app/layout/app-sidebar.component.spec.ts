@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { Subject, of, throwError } from 'rxjs';
+import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import type { MatchView } from '../core/api/contracts';
 import { MatchApi } from '../core/api/match.api';
 import { MediaApi } from '../core/api/media.api';
 import { MessagingApi } from '../core/api/messaging.api';
 import { ProfileApi } from '../core/api/profile.api';
+import { ChatRealtime } from '../core/realtime/chat-realtime';
 import { SessionStore } from '../core/auth/session.store';
 import { ProfileStore } from '../core/state/profile.store';
 import { AppSidebarComponent } from './app-sidebar.component';
@@ -51,7 +52,8 @@ function createSidebar(matchApi: object): AppSidebarComponent {
   TestBed.configureTestingModule({
     providers: [
       { provide: MatchApi, useValue: matchApi },
-      { provide: MessagingApi, useValue: { conversations: vi.fn(() => of([])) } },
+      { provide: MessagingApi, useValue: { conversations: vi.fn(() => of([])), messages: vi.fn(() => of([])) } },
+      { provide: ChatRealtime, useValue: { messages: vi.fn(() => EMPTY) } },
       {
         provide: ProfileApi,
         useValue: {

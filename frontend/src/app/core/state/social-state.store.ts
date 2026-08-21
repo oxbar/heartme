@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView, MatchView } from '../api/contracts';
+import type { ConversationView, MatchView, MessageView } from '../api/contracts';
 import { MatchApi } from '../api/match.api';
 import { MessagingApi } from '../api/messaging.api';
 import { SessionStore } from '../auth/session.store';
@@ -13,6 +13,8 @@ export interface SocialRefreshOptions {
 interface SocialSnapshot {
   matches: MatchView[];
   conversations: ConversationView[];
+  lastMessages?: Record<string, MessageView>;
+  readAt?: Record<string, string>;
 }
 
 interface InFlightRefresh {
@@ -30,6 +32,8 @@ export class SocialStateStore {
 
   readonly matches = signal<MatchView[]>([]);
   readonly conversations = signal<ConversationView[]>([]);
+  readonly lastMessages = signal<Record<string, MessageView>>({});
+  readonly readAtMap = signal<Record<string, string>>({});
   readonly loading = signal(false);
   readonly loaded = signal(false);
   readonly error = signal<unknown | null>(null);
@@ -93,10 +97,69 @@ export class SocialStateStore {
   removeMatch(matchId: string): void {
     const owner = this.syncOwner();
     if (!owner) return;
+    const removedConversationIds = new Set(
+      this.conversations().filter(conversation => conversation.matchId === matchId).map(conversation => conversation.id)
+    );
     this.matches.update(list => list.filter(match => match.id !== matchId));
     this.conversations.update(list => list.filter(conversation => conversation.matchId !== matchId));
+    if (removedConversationIds.size) {
+      this.lastMessages.update(current => omitKeys(current, removedConversationIds));
+      this.readAtMap.update(current => omitKeys(current, removedConversationIds));
+    }
     this.loaded.set(true);
     this.error.set(null);
+    this.persist();
+  }
+
+  rememberMessage(message: MessageView): void {
+    const owner = this.syncOwner();
+    if (!owner || !message?.conversationId || !message.id) return;
+
+    const current = this.lastMessages()[message.conversationId];
+    if (current && messageTime(current) > messageTime(message)) return;
+
+    this.lastMessages.update(messages => ({ ...messages, [message.conversationId]: message }));
+    this.conversations.update(items => sortConversations(items.map(conversation =>
+      conversation.id === message.conversationId
+        ? { ...conversation, lastMessageAt: message.sentAt }
+        : conversation
+    )));
+    this.persist();
+  }
+
+  rememberLatestMessages(messages: Record<string, MessageView>): void {
+    const owner = this.syncOwner();
+    if (!owner) return;
+
+    let changed = false;
+    const merged = { ...this.lastMessages() };
+    for (const [conversationId, message] of Object.entries(messages)) {
+      const current = merged[conversationId];
+      if (!current || messageTime(message) >= messageTime(current)) {
+        if (!current || current.id !== message.id || current.readAt !== message.readAt || current.heartReactionCount !== message.heartReactionCount || current.heartReactedByMe !== message.heartReactedByMe) {
+          merged[conversationId] = message;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return;
+
+    this.lastMessages.set(merged);
+    this.conversations.update(items => sortConversations(items.map(conversation => {
+      const message = merged[conversation.id];
+      if (!message) return conversation;
+      const currentTime = conversation.lastMessageAt ? new Date(conversation.lastMessageAt).getTime() : 0;
+      return messageTime(message) >= currentTime ? { ...conversation, lastMessageAt: message.sentAt } : conversation;
+    })));
+    this.persist();
+  }
+
+  markConversationReadLocal(conversationId: string, at = new Date().toISOString()): void {
+    const owner = this.syncOwner();
+    if (!owner || !conversationId) return;
+    const current = this.readAtMap()[conversationId];
+    if (current && new Date(current).getTime() >= new Date(at).getTime()) return;
+    this.readAtMap.update(map => ({ ...map, [conversationId]: at }));
     this.persist();
   }
 
@@ -114,6 +177,8 @@ export class SocialStateStore {
   private resetForOwnerChange(): void {
     this.matches.set([]);
     this.conversations.set([]);
+    this.lastMessages.set({});
+    this.readAtMap.set({});
     this.loaded.set(false);
     this.loading.set(false);
     this.error.set(null);
@@ -244,7 +309,9 @@ export class SocialStateStore {
     if (!storage) return;
     const snapshot: SocialSnapshot = {
       matches: this.matches(),
-      conversations: this.conversations()
+      conversations: this.conversations(),
+      lastMessages: this.lastMessages(),
+      readAt: this.readAtMap()
     };
     try {
       storage.setItem(storageKey(owner), JSON.stringify(snapshot));
@@ -263,9 +330,13 @@ export class SocialStateStore {
       const parsed = JSON.parse(raw) as Partial<SocialSnapshot>;
       const matches = Array.isArray(parsed.matches) ? dedupeMatches(parsed.matches) : [];
       const conversations = Array.isArray(parsed.conversations) ? sortConversations(parsed.conversations) : [];
-      if (matches.length || conversations.length) {
+      const lastMessages = isRecord(parsed.lastMessages) ? parsed.lastMessages as Record<string, MessageView> : {};
+      const readAt = isRecord(parsed.readAt) ? parsed.readAt as Record<string, string> : {};
+      if (matches.length || conversations.length || Object.keys(lastMessages).length) {
         this.matches.set(dedupeMatches([...matches, ...matchesFromConversations(conversations)]));
         this.conversations.set(conversations);
+        this.lastMessages.set(lastMessages);
+        this.readAtMap.set(readAt);
         this.loaded.set(true);
         this.error.set(null);
       }
@@ -319,4 +390,19 @@ function sessionStorageSafe(): Storage | null {
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+function messageTime(message: MessageView): number {
+  return new Date(message.sentAt).getTime();
+}
+
+function omitKeys<T>(source: Record<string, T>, keys: Set<string>): Record<string, T> {
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!keys.has(key)) next[key] = value;
+  }
+  return next;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }

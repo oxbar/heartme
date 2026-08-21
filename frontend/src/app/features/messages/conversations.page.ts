@@ -1,33 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { ConversationView, MessageView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
-import { MessagingApi } from '../../core/api/messaging.api';
+import type { ConversationView, PhotoView, PresenceView, PublicProfileView } from '../../core/api/contracts';
 import { ProfileApi } from '../../core/api/profile.api';
 import { MediaApi } from '../../core/api/media.api';
 import { SessionStore } from '../../core/auth/session.store';
 import { SocialStateStore } from '../../core/state/social-state.store';
 import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
-
-const READ_KEY = 'hm.conversations.readAt.v1';
-
-function loadReadMap(): Record<string, string> {
-  try {
-    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(READ_KEY) : null;
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveReadMap(map: Record<string, string>): void {
-  try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(READ_KEY, JSON.stringify(map));
-  } catch {
-    // ignore
-  }
-}
 
 @Component({
   imports: [RouterLink, AvatarComponent, IconComponent],
@@ -78,7 +58,7 @@ function saveReadMap(map: Record<string, string>): void {
             @for (conversation of conversations(); track conversation.id) {
               @let userId = otherUser(conversation);
               @let last = lastSnippet(conversation.id);
-              @let ts = conversation.lastMessageAt;
+              @let ts = last?.sentAt || conversation.lastMessageAt;
               @let unread = unreadCount(conversation);
               <a
                 [routerLink]="['/app/messages', conversation.id]"
@@ -123,12 +103,7 @@ function saveReadMap(map: Record<string, string>): void {
                       }
                     </span>
                     @if (unread > 0) {
-                      <span
-                        class="inline-flex h-[20px] min-w-[20px] shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-black text-[hsl(var(--primary-foreground))] hm-unread-badge"
-                        [attr.aria-label]="unread + ' mensagens não lidas'"
-                      >
-                        {{ unread > 9 ? '9+' : unread }}
-                      </span>
+                      <span class="hm-unread-badge hm-unread-dot shrink-0 rounded-full" aria-label="Nova mensagem"></span>
                     }
                   </div>
                 </div>
@@ -145,7 +120,6 @@ export class ConversationsPage implements OnInit {
   private readonly social = inject(SocialStateStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
-  private readonly messagingApi = inject(MessagingApi);
   private readonly session = inject(SessionStore);
 
   readonly enriching = signal(false);
@@ -155,9 +129,8 @@ export class ConversationsPage implements OnInit {
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
-  readonly lastMessages = signal<Record<string, MessageView>>({});
-  readonly unreadByConversation = signal<Record<string, number>>({});
-  readonly readAtMap = signal<Record<string, string>>(loadReadMap());
+  readonly lastMessages = this.social.lastMessages;
+  readonly readAtMap = this.social.readAtMap;
 
   readonly showSkeleton = computed(() =>
     this.conversations().length === 0 && (!this.social.loaded() || this.socialLoading())
@@ -167,7 +140,6 @@ export class ConversationsPage implements OnInit {
     const convosInit = this.conversations();
     if (convosInit.length > 0) {
       void this.enrich(convosInit);
-      void this.loadLastMessages(convosInit);
     }
     await this.load();
   }
@@ -188,11 +160,11 @@ export class ConversationsPage implements OnInit {
     return this.presences()[userId] ?? null;
   }
 
-  lastSnippet(conversationId: string): { content: string; isMine: boolean } | null {
+  lastSnippet(conversationId: string): { content: string; isMine: boolean; sentAt: string } | null {
     const msg = this.lastMessages()[conversationId];
     if (!msg) return null;
     const content = msg.content.length > 60 ? msg.content.slice(0, 60) + '…' : msg.content;
-    return { content, isMine: msg.senderId === this.session.userId() };
+    return { content, isMine: msg.senderId === this.session.userId(), sentAt: msg.sentAt };
   }
 
   unreadCount(conversation: ConversationView): number {
@@ -229,32 +201,12 @@ export class ConversationsPage implements OnInit {
         return;
       }
       const list = this.conversations();
-      await Promise.all([this.enrich(list), this.loadLastMessages(list)]);
+      await this.enrich(list);
     } catch {
       this.error.set('Tente novamente em alguns instantes.');
     }
   }
 
-  private async loadLastMessages(list: ConversationView[]): Promise<void> {
-    if (!list.length) return;
-    try {
-      const pairs = await Promise.all(list.map(async c => {
-        try {
-          const msgs = await firstValueFrom(this.messagingApi.messages(c.id, undefined, 30));
-          const last = msgs.length ? msgs[msgs.length - 1] : null;
-          return last ? [c.id, last] as const : null;
-        } catch {
-          return null;
-        }
-      }));
-      const byId: Record<string, MessageView> = {};
-      for (const p of pairs) if (p) byId[p[0]] = p[1];
-      this.lastMessages.update(prev => ({ ...prev, ...byId }));
-      saveReadMap(this.readAtMap());
-    } catch {
-      // ignore
-    }
-  }
 
   private async enrich(list: ConversationView[]): Promise<void> {
     this.enriching.set(true);

@@ -1,28 +1,18 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { filter, firstValueFrom } from 'rxjs';
+import { filter, firstValueFrom, Subscription } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { ConversationView, MatchView, MessageView, PhotoView, PresenceView, PublicProfileView } from '../core/api/contracts';
 import { MessagingApi } from '../core/api/messaging.api';
 import { ProfileApi } from '../core/api/profile.api';
 import { MediaApi } from '../core/api/media.api';
+import { ChatRealtime } from '../core/realtime/chat-realtime';
 import { SessionStore } from '../core/auth/session.store';
 import { ProfileStore } from '../core/state/profile.store';
 import { SocialStateStore } from '../core/state/social-state.store';
 import { AvatarComponent } from '../shared/avatar.component';
 import { IconComponent } from '../ui/icon/icon.component';
-
-const SIDEBAR_READ_KEY = 'hm.conversations.readAt.v1';
-
-function loadSidebarReadMap(): Record<string, string> {
-  try {
-    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SIDEBAR_READ_KEY) : null;
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
 
 @Component({
   selector: 'hm-app-sidebar',
@@ -113,38 +103,11 @@ function loadSidebarReadMap(): Record<string, string> {
               }
             </div>
           } @else if (messagesMode()) {
-            <div class="hm-sidebar-match-strip" aria-label="Seus matches">
-              <div class="hm-sidebar-match-strip-title">
-                <strong>Seus matches</strong>
-                <a routerLink="/app/matches">Ver todos</a>
-              </div>
-              <div class="hm-sidebar-match-strip-list">
-                <a routerLink="/app/premium" class="hm-sidebar-match-mini is-likes" aria-label="Ver curtidas recebidas">
-                  <span class="hm-sidebar-match-mini-avatar"><hm-icon name="heart" size="21" /></span>
-                  <span>Curtidas</span>
-                </a>
-                @for (match of matches().slice(0, 12); track match.id) {
-                  @let otherId = otherUser(match);
-                  <a [routerLink]="matchRoute(match)" class="hm-sidebar-match-mini" [attr.aria-label]="'Abrir match com ' + (profileFor(otherId)?.displayName || 'Match')">
-                    <span class="hm-sidebar-match-mini-avatar">
-                      @if (photoFor(otherId)) {
-                        <img [src]="photoFor(otherId)!" [alt]="profileFor(otherId)?.displayName || 'Match'" loading="lazy" />
-                      } @else {
-                        <span class="hm-sidebar-match-mini-fallback">{{ initials(profileFor(otherId)?.displayName || 'H') }}</span>
-                      }
-                      @if (presenceFor(otherId)?.online) { <span class="hm-sidebar-match-mini-dot" aria-label="Online"></span> }
-                    </span>
-                    <span>{{ profileFor(otherId)?.displayName || 'Match' }}</span>
-                  </a>
-                }
-              </div>
-            </div>
-
             @if (!conversations().length) {
               <div class="hm-sidebar-empty">
                 <hm-icon name="message-circle" size="28" />
                 <strong>Nenhuma conversa ainda</strong>
-                <span>Seus matches continuam acima e aparecerão aqui quando houver conversa.</span>
+                <span>Quando vocês começarem a conversar, as mensagens mais recentes aparecerão aqui em tempo real.</span>
               </div>
             } @else {
               <div class="hm-conversation-list hm-conversation-list-enhanced">
@@ -183,7 +146,7 @@ function loadSidebarReadMap(): Record<string, string> {
                           [class.font-semibold]="unread > 0"
                           [class.text-white/38]="unread === 0"
                         >
-                          {{ formatTime(conversation.lastMessageAt) }}
+                          {{ formatTime(last?.sentAt || conversation.lastMessageAt) }}
                         </span>
                       </div>
                       <div class="mt-1.5 flex items-center gap-2">
@@ -204,11 +167,9 @@ function loadSidebarReadMap(): Record<string, string> {
                         </span>
                         @if (unread > 0) {
                           <span
-                            class="hm-unread-badge inline-flex h-[19px] min-w-[19px] shrink-0 items-center justify-center rounded-full px-1.5 text-[10.5px] font-black text-[hsl(var(--primary-foreground))]"
-                            [attr.aria-label]="unread + ' mensagens não lidas'"
-                          >
-                            {{ unread > 9 ? '9+' : unread }}
-                          </span>
+                            class="hm-unread-badge hm-unread-dot shrink-0 rounded-full"
+                            aria-label="Nova mensagem"
+                          ></span>
                         }
                       </div>
                     </div>
@@ -247,6 +208,7 @@ export class AppSidebarComponent {
   private readonly messagingApi = inject(MessagingApi);
   private readonly profileApi = inject(ProfileApi);
   private readonly mediaApi = inject(MediaApi);
+  private readonly realtime = inject(ChatRealtime);
   private readonly session = inject(SessionStore);
   private readonly profileStore = inject(ProfileStore);
   private readonly router = inject(Router);
@@ -261,11 +223,12 @@ export class AppSidebarComponent {
   readonly profiles = signal<Record<string, PublicProfileView>>({});
   readonly photos = signal<Record<string, PhotoView[]>>({});
   readonly presences = signal<Record<string, PresenceView>>({});
-  readonly lastMessages = signal<Record<string, MessageView>>({});
-  readonly readAtMap = signal<Record<string, string>>(loadSidebarReadMap());
+  readonly lastMessages = this.social.lastMessages;
+  readonly readAtMap = this.social.readAtMap;
   readonly ownPhoto = signal<string | null>(null);
   private presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
   private enrichmentLoadInFlight: Promise<void> | null = null;
+  private readonly realtimeConversationSubs = new Map<string, Subscription>();
 
   readonly profileMode = computed(() => {
     const path = this.activeUrl().split(/[?#]/)[0];
@@ -291,6 +254,11 @@ export class AppSidebarComponent {
         }
       });
 
+    effect(() => {
+      const conversationIds = this.conversations().map(conversation => conversation.id);
+      this.syncRealtimeSubscriptions(conversationIds);
+    });
+
     void this.load(true);
     void firstValueFrom(this.profileApi.pingPresence()).catch(() => null);
     this.presenceHeartbeat = setInterval(
@@ -299,6 +267,8 @@ export class AppSidebarComponent {
     );
     this.destroyRef.onDestroy(() => {
       if (this.presenceHeartbeat) clearInterval(this.presenceHeartbeat);
+      for (const subscription of this.realtimeConversationSubs.values()) subscription.unsubscribe();
+      this.realtimeConversationSubs.clear();
     });
   }
 
@@ -329,11 +299,11 @@ export class AppSidebarComponent {
     return conversation ? ['/app/messages', conversation.id] : ['/app/profiles', this.otherUser(match)];
   }
 
-  lastSnippet(conversationId: string): { content: string; isMine: boolean } | null {
+  lastSnippet(conversationId: string): { content: string; isMine: boolean; sentAt: string } | null {
     const msg = this.lastMessages()[conversationId];
     if (!msg) return null;
     const content = msg.content.length > 56 ? msg.content.slice(0, 56) + '…' : msg.content;
-    return { content, isMine: msg.senderId === this.session.userId() };
+    return { content, isMine: msg.senderId === this.session.userId(), sentAt: msg.sentAt };
   }
 
   unreadCount(conversation: ConversationView): number {
@@ -399,7 +369,7 @@ export class AppSidebarComponent {
       if (pair) profileMap[pair[0]] = pair[1];
     }
     this.profiles.set(profileMap);
-    this.lastMessages.update(prev => ({ ...prev, ...lastMessagesResult }));
+    this.social.rememberLatestMessages(lastMessagesResult);
 
     if (userIds.length) {
       const [photos, presencePairs] = await Promise.all([
@@ -418,22 +388,59 @@ export class AppSidebarComponent {
 
   private async loadSidebarLastMessages(list: ConversationView[]): Promise<Record<string, MessageView>> {
     if (!list.length) return {};
+    const cached = this.lastMessages();
+    const stale = list.filter(conversation => {
+      if (!conversation.lastMessageAt) return false;
+      const known = cached[conversation.id];
+      if (!known) return true;
+      return new Date(known.sentAt).getTime() < new Date(conversation.lastMessageAt).getTime();
+    });
+    if (!stale.length) return {};
+
     try {
-      const pairs = await Promise.all(list.map(async c => {
+      const pairs = await Promise.all(stale.map(async conversation => {
         try {
-          const msgs = await firstValueFrom(this.messagingApi.messages(c.id, undefined, 30));
-          const last = msgs.length ? msgs[msgs.length - 1] : null;
-          return last ? [c.id, last] as const : null;
+          const messages = await firstValueFrom(this.messagingApi.messages(conversation.id, undefined, 1));
+          const latest = messages[0] ?? null;
+          return latest ? [conversation.id, latest] as const : null;
         } catch {
           return null;
         }
       }));
       const byId: Record<string, MessageView> = {};
-      for (const p of pairs) if (p) byId[p[0]] = p[1];
+      for (const pair of pairs) if (pair) byId[pair[0]] = pair[1];
       return byId;
     } catch {
       return {};
     }
+  }
+
+  private syncRealtimeSubscriptions(conversationIds: string[]): void {
+    const wanted = new Set(conversationIds);
+
+    for (const [conversationId, subscription] of this.realtimeConversationSubs) {
+      if (!wanted.has(conversationId)) {
+        subscription.unsubscribe();
+        this.realtimeConversationSubs.delete(conversationId);
+      }
+    }
+
+    for (const conversationId of wanted) {
+      if (this.realtimeConversationSubs.has(conversationId)) continue;
+      const subscription = this.realtime.messages(conversationId).subscribe(message => {
+        this.social.rememberMessage(message);
+        if (message.senderId !== this.session.userId() && this.isConversationOpen(conversationId)) {
+          this.social.markConversationReadLocal(conversationId, message.sentAt);
+        }
+      });
+      this.realtimeConversationSubs.set(conversationId, subscription);
+    }
+  }
+
+  private isConversationOpen(conversationId: string): boolean {
+    if (typeof document !== 'undefined' && document.hidden) return false;
+    const path = this.activeUrl().split(/[?#]/)[0];
+    return path === `/app/messages/${conversationId}`;
   }
 
 }

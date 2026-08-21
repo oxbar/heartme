@@ -15,20 +15,6 @@ import { AvatarComponent } from '../../shared/avatar.component';
 import { IconComponent } from '../../ui/icon/icon.component';
 import { PhotoCarouselComponent } from '../../ui/photo-carousel/photo-carousel.component';
 
-const READ_KEY = 'hm.conversations.readAt.v1';
-
-function updateLocalRead(conversationId: string): void {
-  try {
-    if (typeof sessionStorage === 'undefined') return;
-    const raw = sessionStorage.getItem(READ_KEY);
-    const map: Record<string, string> = raw ? JSON.parse(raw) : {};
-    map[conversationId] = new Date().toISOString();
-    sessionStorage.setItem(READ_KEY, JSON.stringify(map));
-  } catch {
-    // ignore
-  }
-}
-
 @Component({
   imports: [FormsModule, RouterLink, MessageBubbleComponent, AvatarComponent, IconComponent, PhotoCarouselComponent],
   standalone: true,
@@ -45,8 +31,8 @@ function updateLocalRead(conversationId: string): void {
               @if (presence()?.online) { <span class="hm-online-dot is-chat" aria-label="Online"></span> }
             </div>
             <div class="min-w-0 flex-1">
-              <h2>{{ currentProfile.displayName }}</h2>
-              <p [class.text-emerald-400]="presence()?.online">{{ presenceLabel() }}</p>
+              <h2>Você deu match com {{ currentProfile.displayName }}</h2>
+              <p [class.text-emerald-400]="presence()?.online">{{ matchContextLabel() }}</p>
             </div>
             <a [routerLink]="['/app/profiles', currentProfile.userId]" class="hm-mobile-icon-button" aria-label="Abrir perfil">
               <hm-icon name="menu" size="19" />
@@ -223,6 +209,14 @@ export class ChatPage implements OnDestroy {
     return `Visto por último ${last.toLocaleDateString([], { day: '2-digit', month: 'short' })} às ${last.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   });
 
+  readonly matchContextLabel = computed(() => {
+    const conversation = this.conversation();
+    const presence = this.presenceLabel();
+    if (!conversation) return presence;
+    const matchedAt = new Date(conversation.createdAt).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return `${matchedAt} · ${presence}`;
+  });
+
   inputContent = '';
   private realtimeSubs = new Subscription();
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
@@ -230,7 +224,7 @@ export class ChatPage implements OnDestroy {
   @HostListener('document:visibilitychange')
   onVisibility(): void {
     if (!document.hidden && this.id()) {
-      updateLocalRead(this.id());
+      this.social.markConversationReadLocal(this.id());
       void this.markConversationRead(this.id());
     }
   }
@@ -267,6 +261,7 @@ export class ChatPage implements OnDestroy {
     this.realtimeSubs = new Subscription();
     try {
       this.realtimeSubs.add(this.realtime.messages(conversationId).subscribe(message => {
+        this.social.rememberMessage(message);
         const isNew = !this.messages().some(item => item.id === message.id);
         const isMine = message.senderId === this.session.userId();
         if (isNew) {
@@ -348,7 +343,10 @@ export class ChatPage implements OnDestroy {
         firstValueFrom(this.messagingApi.messages(conversationId, undefined, 100)),
         firstValueFrom(this.messagingApi.conversations())
       ]);
-      this.messages.set([...messages].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()));
+      const orderedMessages = [...messages].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+      this.messages.set(orderedMessages);
+      const newestMessage = orderedMessages[orderedMessages.length - 1];
+      if (newestMessage) this.social.rememberMessage(newestMessage);
 
       const conversation = conversations.find(item => item.id === conversationId) ?? null;
       this.conversation.set(conversation);
@@ -367,7 +365,7 @@ export class ChatPage implements OnDestroy {
         this.startPresencePolling(otherId);
       }
 
-      updateLocalRead(conversationId);
+      this.social.markConversationReadLocal(conversationId);
       await this.markConversationRead(conversationId);
       this.scrollToBottom();
 
@@ -392,7 +390,7 @@ export class ChatPage implements OnDestroy {
   }
 
   private async markConversationRead(conversationId: string): Promise<void> {
-    updateLocalRead(conversationId);
+    this.social.markConversationReadLocal(conversationId);
     await firstValueFrom(this.messagingApi.markRead(conversationId)).catch(() => undefined);
   }
 
@@ -438,6 +436,7 @@ export class ChatPage implements OnDestroy {
       this.sending.set(true);
       try {
         const message = await firstValueFrom(this.messagingApi.send(conversationId, content));
+        this.social.rememberMessage(message);
         const isNew = !this.messages().some(item => item.id === message.id);
         if (isNew) this.messages.update(list => [...list, message]);
         this.inputContent = '';
